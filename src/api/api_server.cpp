@@ -161,13 +161,16 @@ bool ApiServer::stop() {
 ApiServerStatus ApiServer::getStatus() const {
     std::lock_guard<std::mutex> lock(status_mutex_);
 
+    // 创建一个临时副本，以便在const方法中更新
+    ApiServerStatus status_copy = status_;
+
     // 更新请求计数和错误计数
-    if (web_server_ && status_.state == ApiServerState::RUNNING) {
-        status_.request_count = web_server_->getRequestCount();
-        status_.error_count = web_server_->getErrorCount();
+    if (web_server_ && status_copy.state == ApiServerState::RUNNING) {
+        status_copy.request_count = web_server_->getRequestCount();
+        status_copy.error_count = web_server_->getErrorCount();
     }
 
-    return status_;
+    return status_copy;
 }
 
 bool ApiServer::registerHandler(const std::string& path, const std::string& method,
@@ -247,7 +250,7 @@ void ApiServer::registerApiRoutes() {
         }
 
         // 生成客户端ID
-        std::string client_id = generateClientId();
+        std::string client_id = ApiServer::getInstance().generateClientId();
 
         // 设置流回调
         response.stream_callback = [client_id, width, height, quality, fps](

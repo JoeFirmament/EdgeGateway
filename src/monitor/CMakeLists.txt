@@ -1,17 +1,17 @@
 # 设置源文件
 set(MONITOR_SOURCES
-    # 暂时没有源文件，使用一个空文件
+    logger.cpp
 )
 
-# 创建库（使用INTERFACE库，不需要源文件）
-add_library(monitor_module INTERFACE)
+# 创建库
+add_library(monitor_module STATIC ${MONITOR_SOURCES})
 
 # 设置包含目录
-target_include_directories(monitor_module INTERFACE
+target_include_directories(monitor_module PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/../../include
 )
 
 # 链接库
-target_link_libraries(monitor_module INTERFACE
+target_link_libraries(monitor_module
     utils_module)

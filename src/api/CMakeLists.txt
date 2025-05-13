@@ -3,6 +3,7 @@ set(API_SOURCES
     api_server.cpp
     web_server.cpp
     mjpeg_streamer.cpp
+    rest_handler.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/mongoose/mongoose.c
 )
 
@@ -21,4 +22,6 @@ target_link_libraries(api_module
     utils_module
     camera_module
     ${FFMPEG_LIBRARIES}
+    pthread
+    dl
 )

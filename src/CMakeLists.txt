@@ -27,6 +27,8 @@ target_link_libraries(cam_server
     ${FFMPEG_LIBRARIES}
     ${V4L2_LIBRARIES}
     pthread
+    dl
+    m
 )
 
 if(ROCKCHIP_MPP_FOUND)

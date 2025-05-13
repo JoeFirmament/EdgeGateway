@@ -13,6 +13,7 @@
 #include <thread>
 #include <chrono>
 #include <filesystem>
+#include <cstdlib>  // for memset
 
 // 使用Mongoose作为HTTP服务器库
 #include "mongoose.h"
@@ -51,18 +52,19 @@ public:
         }
 
         // 创建HTTP连接
-        struct mg_connection* nc = mg_http_listen(&mg_mgr_, listen_addr.c_str(), eventHandler, this);
+        struct mg_connection* nc = mg_http_listen(&mg_mgr_, listen_addr.c_str(), eventHandler, NULL);
         if (nc == nullptr) {
             LOG_ERROR("无法启动Web服务器: " + listen_addr, "WebServer");
             mg_mgr_free(&mg_mgr_);
             return false;
         }
+        nc->fn_data = this;
 
         // 配置SSL
         if (config_.use_https) {
             struct mg_tls_opts opts = {};
-            opts.cert = config_.ssl_cert_path.c_str();
-            opts.certkey = config_.ssl_key_path.c_str();
+            opts.cert = mg_str(config_.ssl_cert_path.c_str());
+            opts.key = mg_str(config_.ssl_key_path.c_str());
             mg_tls_init(nc, &opts);
         }
 
@@ -84,7 +86,7 @@ public:
         }
 
         is_running_ = false;
-        
+
         if (server_thread_.joinable()) {
             server_thread_.join();
         }
@@ -97,9 +99,9 @@ public:
     }
 
     // Mongoose事件处理函数
-    static void eventHandler(struct mg_connection* nc, int ev, void* ev_data, void* fn_data) {
-        auto* impl = static_cast<Impl*>(fn_data);
-        
+    static void eventHandler(struct mg_connection* nc, int ev, void* ev_data) {
+        auto* impl = static_cast<Impl*>(nc->fn_data);
+
         switch (ev) {
             case MG_EV_HTTP_MSG: {
                 auto* hm = static_cast<struct mg_http_message*>(ev_data);
@@ -144,17 +146,17 @@ public:
     // 解析HTTP请求
     void parseHttpRequest(struct mg_http_message* hm, HttpRequest& request) {
         // 解析方法
-        request.method = std::string(hm->method.ptr, hm->method.len);
+        request.method = std::string(hm->method.buf, hm->method.len);
 
         // 解析路径
-        request.path = std::string(hm->uri.ptr, hm->uri.len);
+        request.path = std::string(hm->uri.buf, hm->uri.len);
 
         // 解析查询参数
         if (hm->query.len > 0) {
-            std::string query_string(hm->query.ptr, hm->query.len);
+            std::string query_string(hm->query.buf, hm->query.len);
             std::istringstream ss(query_string);
             std::string param;
-            
+
             while (std::getline(ss, param, '&')) {
                 size_t pos = param.find('=');
                 if (pos != std::string::npos) {
@@ -167,20 +169,18 @@ public:
 
         // 解析请求头
         for (int i = 0; i < MG_MAX_HTTP_HEADERS && hm->headers[i].name.len > 0; i++) {
-            std::string name(hm->headers[i].name.ptr, hm->headers[i].name.len);
-            std::string value(hm->headers[i].value.ptr, hm->headers[i].value.len);
+            std::string name(hm->headers[i].name.buf, hm->headers[i].name.len);
+            std::string value(hm->headers[i].value.buf, hm->headers[i].value.len);
             request.headers[name] = value;
         }
 
         // 解析请求体
         if (hm->body.len > 0) {
-            request.body = std::string(hm->body.ptr, hm->body.len);
+            request.body = std::string(hm->body.buf, hm->body.len);
         }
 
-        // 获取客户端IP
-        char addr[100];
-        mg_ntoa(&nc->peer, addr, sizeof(addr));
-        request.client_ip = addr;
+        // 设置默认客户端IP
+        request.client_ip = "0.0.0.0";
     }
 
     // 处理静态文件请求
@@ -212,7 +212,12 @@ public:
         std::string content_type = getContentTypeFromExtension(ext);
 
         // 发送文件
-        mg_http_serve_file(nc, hm, file_path.c_str(), content_type.c_str(), "");
+        struct mg_http_serve_opts opts;
+        memset(&opts, 0, sizeof(opts));
+        // 设置额外的HTTP头，包括Content-Type
+        std::string extra_headers = "Content-Type: " + content_type + "\r\n";
+        opts.extra_headers = extra_headers.c_str();
+        mg_http_serve_file(nc, hm, file_path.c_str(), &opts);
         return true;
     }
 
@@ -245,7 +250,7 @@ public:
 
         // 设置连接为流式响应
         nc->is_resp = 1;  // 标记为已响应
-        
+
         // 构建响应头
         std::string headers;
         for (const auto& header : response.headers) {
@@ -263,14 +268,14 @@ public:
         headers += "Transfer-Encoding: chunked\r\n";
 
         // 发送响应头
-        mg_printf(nc, "HTTP/1.1 %d %s\r\n%s\r\n", 
-                 response.status_code, 
+        mg_printf(nc, "HTTP/1.1 %d %s\r\n%s\r\n",
+                 response.status_code,
                  response.status_message.c_str(),
                  headers.c_str());
 
         // 保存连接信息
         std::string client_id = std::to_string(reinterpret_cast<uintptr_t>(nc));
-        
+
         {
             std::lock_guard<std::mutex> lock(streaming_connections_mutex_);
             streaming_connections_[client_id] = nc;
@@ -285,14 +290,14 @@ public:
     // 发送流数据
     void sendStreamData(const std::string& client_id, const std::vector<uint8_t>& data) {
         std::lock_guard<std::mutex> lock(streaming_connections_mutex_);
-        
+
         auto it = streaming_connections_.find(client_id);
         if (it == streaming_connections_.end()) {
             return;
         }
 
         struct mg_connection* nc = it->second;
-        
+
         // 发送分块数据
         mg_printf(nc, "%lx\r\n", data.size());
         mg_send(nc, data.data(), data.size());
@@ -302,7 +307,7 @@ public:
     // 处理连接关闭
     void handleConnectionClose(struct mg_connection* nc) {
         std::string client_id = std::to_string(reinterpret_cast<uintptr_t>(nc));
-        
+
         std::lock_guard<std::mutex> lock(streaming_connections_mutex_);
         streaming_connections_.erase(client_id);
     }
@@ -339,7 +344,7 @@ public:
         if (it != content_types.end()) {
             return it->second;
         }
-        
+
         return "application/octet-stream";
     }
 
@@ -350,7 +355,7 @@ private:
     struct mg_mgr mg_mgr_;
     std::thread server_thread_;
     std::atomic<bool> is_running_{false};
-    
+
     // 流式连接管理
     std::mutex streaming_connections_mutex_;
     std::unordered_map<std::string, struct mg_connection*> streaming_connections_;
@@ -358,7 +363,7 @@ private:
 
 // WebServer类实现
 
-WebServer::WebServer() 
+WebServer::WebServer()
     : is_initialized_(false), is_running_(false), request_count_(0), error_count_(0) {
     impl_ = std::make_unique<Impl>(this);
 }
@@ -374,11 +379,11 @@ bool WebServer::initialize(const WebServerConfig& config, std::shared_ptr<RestHa
 
     config_ = config;
     rest_handler_ = rest_handler;
-    
+
     if (!impl_->initialize(config, rest_handler)) {
         return false;
     }
-    
+
     is_initialized_ = true;
     return true;
 }

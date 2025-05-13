@@ -195,14 +195,19 @@ http://<rk3588-ip-address>:8080/api/stream/mjpeg?width=1280&height=720&quality=8
 - **摄像头模块**：实现了CameraDevice接口和V4L2Camera类，支持摄像头设备的基本操作
 - **视频录制模块**：实现了IVideoRecorder接口和FFmpegRecorder类，支持视频流的编码和录制
 - **视频分割模块**：实现了IVideoSplitter接口和FFmpegSplitter类，支持将视频文件拆分为静态图像帧
+- **日志系统**：实现了Logger类，支持多级别日志、文件和控制台输出、异步日志等功能
+- **文件工具类**：实现了FileUtils类，提供文件和目录操作的通用功能
+- **字符串工具类**：实现了StringUtils类，提供字符串处理的通用功能
+- **配置管理器**：实现了ConfigManager类，支持配置的加载、保存和访问
+- **REST API处理器**：实现了RestHandler类，支持HTTP请求的路由和处理
 
 #### 进行中模块
-- **API服务模块**：正在实现Web服务器和REST API接口
+- **Web服务器模块**：正在实现基于Mongoose的Web服务器
 - **MJPEG流媒体服务**：正在实现基于HTTP的MJPEG流媒体服务
+- **API接口实现**：正在实现各功能模块的REST API接口
 
 #### 待实现模块
 - **系统监控模块**：监控系统资源使用情况
-- **配置管理模块**：管理系统配置参数
 - **存储管理模块**：管理视频文件和图像文件的存储
 - **Web客户端**：实现基于浏览器的用户界面
 

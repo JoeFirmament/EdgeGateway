@@ -1,6 +1,9 @@
 # 设置源文件
 set(UTILS_SOURCES
     time_utils.cpp
+    file_utils.cpp
+    string_utils.cpp
+    config_manager.cpp
 )
 
 # 创建库
