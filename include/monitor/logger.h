@@ -8,6 +8,10 @@
 #include <functional>
 #include <chrono>
 #include <sstream>
+#include <thread>
+#include <atomic>
+#include <condition_variable>
+#include <fstream>
 
 namespace cam_server {
 namespace monitor {

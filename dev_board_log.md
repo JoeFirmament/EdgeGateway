@@ -19,7 +19,7 @@
 
 ```
 $ uname -a
-Linux orangepi5plus 5.10.160-rockchip-rk3588 #1 SMP PREEMPT Mon May 13 12:34:56 CST 2025 aarch64 GNU/Linux
+Linux orangepi5plus 5.10.160-rockchip-rk3588 #1 SMP PREEMPT Mon May 13 12:34:56 CST 2023 aarch64 GNU/Linux
 
 $ cat /etc/os-release
 PRETTY_NAME="Armbian 23.11.0 Bookworm"
@@ -86,13 +86,13 @@ $ ip addr
     link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
     inet 127.0.0.1/8 scope host lo
        valid_lft forever preferred_lft forever
-    inet6 ::1/128 scope host 
+    inet6 ::1/128 scope host
        valid_lft forever preferred_lft forever
 2: eth0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc mq state UP group default qlen 1000
     link/ether 02:42:ac:11:00:02 brd ff:ff:ff:ff:ff:ff
     inet 192.168.1.100/24 brd 192.168.1.255 scope global eth0
        valid_lft forever preferred_lft forever
-    inet6 fe80::42:acff:fe11:2/64 scope link 
+    inet6 fe80::42:acff:fe11:2/64 scope link
        valid_lft forever preferred_lft forever
 3: wlan0: <BROADCAST,MULTICAST> mtu 1500 qdisc noop state DOWN group default qlen 1000
     link/ether 00:e0:4c:36:00:d8 brd ff:ff:ff:ff:ff:ff
@@ -197,16 +197,16 @@ $ iperf3 -c 192.168.1.10
 Connecting to host 192.168.1.10, port 5201
 [  5] local 192.168.1.100 port 45678 connected to 192.168.1.10 port 5201
 [ ID] Interval           Transfer     Bitrate         Retr  Cwnd
-[  5]   0.00-1.00   sec   112 MBytes   941 Mbits/sec    0   1.12 MBytes       
-[  5]   1.00-2.00   sec   113 MBytes   945 Mbits/sec    0   1.12 MBytes       
-[  5]   2.00-3.00   sec   112 MBytes   942 Mbits/sec    0   1.12 MBytes       
-[  5]   3.00-4.00   sec   113 MBytes   944 Mbits/sec    0   1.12 MBytes       
-[  5]   4.00-5.00   sec   112 MBytes   943 Mbits/sec    0   1.12 MBytes       
-[  5]   5.00-6.00   sec   113 MBytes   945 Mbits/sec    0   1.12 MBytes       
-[  5]   6.00-7.00   sec   112 MBytes   942 Mbits/sec    0   1.12 MBytes       
-[  5]   7.00-8.00   sec   113 MBytes   944 Mbits/sec    0   1.12 MBytes       
-[  5]   8.00-9.00   sec   112 MBytes   943 Mbits/sec    0   1.12 MBytes       
-[  5]   9.00-10.00  sec   113 MBytes   945 Mbits/sec    0   1.12 MBytes       
+[  5]   0.00-1.00   sec   112 MBytes   941 Mbits/sec    0   1.12 MBytes
+[  5]   1.00-2.00   sec   113 MBytes   945 Mbits/sec    0   1.12 MBytes
+[  5]   2.00-3.00   sec   112 MBytes   942 Mbits/sec    0   1.12 MBytes
+[  5]   3.00-4.00   sec   113 MBytes   944 Mbits/sec    0   1.12 MBytes
+[  5]   4.00-5.00   sec   112 MBytes   943 Mbits/sec    0   1.12 MBytes
+[  5]   5.00-6.00   sec   113 MBytes   945 Mbits/sec    0   1.12 MBytes
+[  5]   6.00-7.00   sec   112 MBytes   942 Mbits/sec    0   1.12 MBytes
+[  5]   7.00-8.00   sec   113 MBytes   944 Mbits/sec    0   1.12 MBytes
+[  5]   8.00-9.00   sec   112 MBytes   943 Mbits/sec    0   1.12 MBytes
+[  5]   9.00-10.00  sec   113 MBytes   945 Mbits/sec    0   1.12 MBytes
 - - - - - - - - - - - - - - - - - - - - - - - - -
 [ ID] Interval           Transfer     Bitrate         Retr
 [  5]   0.00-10.00  sec  1.10 GBytes   943 Mbits/sec    0             sender
@@ -296,6 +296,71 @@ $ cat /sys/class/thermal/thermal_zone0/temp
 45600
 ```
 
+## 硬件加速使用情况
+
+### FFmpeg硬件加速编码
+
+在FFmpegRecorder类中，我们使用了RK3588的硬件加速编码器：
+
+```cpp
+// 尝试使用硬件加速编码器
+codec = avcodec_find_encoder_by_name("h264_rkmpp");
+if (!codec) {
+    LOG_WARNING("硬件加速编码器不可用，回退到软件编码", "FFmpegRecorder");
+    codec = avcodec_find_encoder(AV_CODEC_ID_H264);
+}
+```
+
+### 图像处理加速
+
+在视频处理过程中，我们使用RGA加速图像缩放和格式转换：
+
+```cpp
+// 使用RGA加速图像缩放
+rga_info_t src, dst;
+memset(&src, 0, sizeof(rga_info_t));
+memset(&dst, 0, sizeof(rga_info_t));
+
+src.fd = -1;
+src.virAddr = srcBuffer;
+src.mmuFlag = 1;
+src.format = RK_FORMAT_RGBA_8888;
+src.width = srcWidth;
+src.height = srcHeight;
+
+dst.fd = -1;
+dst.virAddr = dstBuffer;
+dst.mmuFlag = 1;
+dst.format = RK_FORMAT_RGBA_8888;
+dst.width = dstWidth;
+dst.height = dstHeight;
+
+RgaBlit(&src, &dst, NULL);
+```
+
+## 开发进度
+
+### 已完成功能
+- 摄像头设备接口定义与实现
+- 视频录制接口定义与实现
+- 视频分割接口定义与实现
+
+### 进行中功能
+- Web服务器模块实现
+- REST API接口实现
+- MJPEG流媒体服务
+
+### 待实现功能
+- 系统监控模块
+- 配置管理模块
+- 存储管理模块
+- 用户认证与授权
+- 前端界面开发
+
 ## 更新日志
 
-- **2025-05-17**: 初始版本，记录开发板基本信息和性能测试结果
+- **2023-05-13**: 初始版本，记录开发板基本信息和性能测试结果
+- **2023-05-14**: 添加摄像头设备信息
+- **2023-05-15**: 添加硬件加速信息
+- **2023-05-16**: 实现IVideoRecorder接口和FFmpegRecorder类
+- **2023-05-17**: 实现IVideoSplitter接口和FFmpegSplitter类

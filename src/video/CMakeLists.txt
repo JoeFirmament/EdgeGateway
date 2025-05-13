@@ -1,8 +1,7 @@
 # 设置源文件
 set(VIDEO_SOURCES
-    video_recorder.cpp
-    video_splitter.cpp
-    frame_converter.cpp
+    ffmpeg_recorder.cpp
+    ffmpeg_splitter.cpp
 )
 
 # 创建库

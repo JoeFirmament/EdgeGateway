@@ -1,4 +1,5 @@
 #include "video/video_recorder.h"
+#include "video/i_video_recorder.h"
 #include "utils/file_utils.h"
 #include "utils/string_utils.h"
 #include "monitor/logger.h"
@@ -496,8 +497,10 @@ bool FFmpegRecorder::createVideoStream() {
     codec_context_->codec_type = AVMEDIA_TYPE_VIDEO;
     codec_context_->width = config_.width;
     codec_context_->height = config_.height;
-    codec_context_->time_base = (AVRational){1, config_.fps};
-    codec_context_->framerate = (AVRational){config_.fps, 1};
+    codec_context_->time_base.num = 1;
+    codec_context_->time_base.den = config_.fps;
+    codec_context_->framerate.num = config_.fps;
+    codec_context_->framerate.den = 1;
     codec_context_->gop_size = config_.gop;
     codec_context_->max_b_frames = 0;  // 不使用B帧
     codec_context_->pix_fmt = AV_PIX_FMT_YUV420P;
@@ -513,12 +516,12 @@ bool FFmpegRecorder::createVideoStream() {
     // 设置编码器特定选项
     if (codec_context_->codec_id == AV_CODEC_ID_H264) {
         // 设置H.264编码器选项
-        av_opt_set(codec_context_->priv_data, "preset", "ultrafast", 0);
-        av_opt_set(codec_context_->priv_data, "tune", "zerolatency", 0);
+        av_dict_set(&format_context_->metadata, "preset", "ultrafast", 0);
+        av_dict_set(&format_context_->metadata, "tune", "zerolatency", 0);
     }
 
     // 复制编码器参数到视频流
-    ret = avcodec_parameters_from_context(video_stream_->codecpar, codec_context_);
+    int ret = avcodec_parameters_from_context(video_stream_->codecpar, codec_context_);
     if (ret < 0) {
         char err_buf[AV_ERROR_MAX_STRING_SIZE] = {0};
         av_strerror(ret, err_buf, AV_ERROR_MAX_STRING_SIZE);
@@ -646,7 +649,7 @@ bool FFmpegRecorder::encodeAndWriteFrame(const camera::Frame& frame) {
     // 设置帧时间戳
     frame_->pts = av_rescale_q(
         status_.frame_count,
-        (AVRational){1, config_.fps},
+        av_make_q(1, config_.fps),
         codec_context_->time_base
     );
 
@@ -788,8 +791,12 @@ std::string FFmpegRecorder::generateFileName() {
     }
 
     // 完整路径
-    std::string output_dir = fs::path(config_.output_path).is_directory() ?
-                            config_.output_path : fs::path(config_.output_path).parent_path().string();
+    std::string output_dir;
+    if (fs::is_directory(fs::path(config_.output_path))) {
+        output_dir = config_.output_path;
+    } else {
+        output_dir = fs::path(config_.output_path).parent_path().string();
+    }
 
     if (output_dir.empty()) {
         output_dir = "./videos";

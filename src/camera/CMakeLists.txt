@@ -1,7 +1,6 @@
 # 设置源文件
 set(CAMERA_SOURCES
     camera_manager.cpp
-    camera_device.cpp
     v4l2_camera.cpp
 )
 

@@ -6,6 +6,7 @@
 #include <thread>
 #include <atomic>
 #include <functional>
+#include <mutex>
 #include <unordered_map>
 
 namespace cam_server {
@@ -137,6 +138,11 @@ private:
     // 析构函数
     ~ApiServer();
 
+    // 注册API路由
+    void registerApiRoutes();
+    // 生成客户端ID
+    std::string generateClientId();
+
     // 服务器配置
     ApiServerConfig config_;
     // 服务器状态
@@ -148,7 +154,7 @@ private:
     // 是否已初始化
     bool is_initialized_;
     // REST处理器
-    std::unique_ptr<RestHandler> rest_handler_;
+    std::shared_ptr<RestHandler> rest_handler_;
     // Web服务器
     std::unique_ptr<WebServer> web_server_;
     // 服务器线程

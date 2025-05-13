@@ -2,7 +2,6 @@
 set(STORAGE_SOURCES
     file_manager.cpp
     storage_manager.cpp
-    archive_manager.cpp
 )
 
 # 创建库

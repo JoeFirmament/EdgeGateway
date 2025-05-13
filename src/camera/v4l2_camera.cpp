@@ -393,7 +393,7 @@ void V4L2Camera::queryCapabilities(int fd, CameraDeviceInfo& deviceInfo) {
     memset(&fmtdesc, 0, sizeof(fmtdesc));
     fmtdesc.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
 
-    std::set<Resolution> resolutions;
+    std::set<std::pair<int, int>> resolutions;
     std::vector<PixelFormat> formats;
 
     // 遍历所有支持的格式
@@ -413,7 +413,7 @@ void V4L2Camera::queryCapabilities(int fd, CameraDeviceInfo& deviceInfo) {
         while (ioctl(fd, VIDIOC_ENUM_FRAMESIZES, &frmsize) >= 0) {
             if (frmsize.type == V4L2_FRMSIZE_TYPE_DISCRETE) {
                 // 离散分辨率
-                Resolution res(frmsize.discrete.width, frmsize.discrete.height);
+                std::pair<int, int> res(frmsize.discrete.width, frmsize.discrete.height);
                 resolutions.insert(res);
             } else if (frmsize.type == V4L2_FRMSIZE_TYPE_STEPWISE) {
                 // 步进分辨率，添加一些常见分辨率
@@ -423,7 +423,7 @@ void V4L2Camera::queryCapabilities(int fd, CameraDeviceInfo& deviceInfo) {
                     for (uint32_t height = frmsize.stepwise.min_height;
                          height <= frmsize.stepwise.max_height;
                          height += frmsize.stepwise.step_height) {
-                        Resolution res(width, height);
+                        std::pair<int, int> res(width, height);
                         resolutions.insert(res);
                     }
                 }
@@ -436,13 +436,13 @@ void V4L2Camera::queryCapabilities(int fd, CameraDeviceInfo& deviceInfo) {
     }
 
     // 将分辨率集合转换为向量
-    deviceInfo.supportedResolutions.clear();
+    deviceInfo.supported_resolutions.clear();
     for (const auto& res : resolutions) {
-        deviceInfo.supportedResolutions.push_back(res);
+        deviceInfo.supported_resolutions.push_back(res);
     }
 
     // 设置支持的格式
-    deviceInfo.supportedFormats = formats;
+    deviceInfo.supported_formats = formats;
 }
 
 bool V4L2Camera::setVideoFormat(int width, int height, uint32_t pixelformat) {

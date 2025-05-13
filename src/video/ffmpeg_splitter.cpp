@@ -1,4 +1,4 @@
-#include "video/video_splitter.h"
+#include "video/i_video_splitter.h"
 #include "utils/file_utils.h"
 #include "utils/string_utils.h"
 #include "monitor/logger.h"
@@ -14,6 +14,7 @@ extern "C" {
 #include <thread>
 #include <filesystem>
 #include <random>
+#include <future>
 #include <iomanip>
 #include <sstream>
 
@@ -117,15 +118,15 @@ std::string FFmpegSplitter::createTask(const SplitConfig& config) {
     task->cancelFlag = false;
 
     // 初始化任务状态
-    task->status.taskId = task->taskId;
+    task->status.task_id = task->taskId;
     task->status.state = SplitTaskState::PENDING;
     task->status.progress = 0.0;
-    task->status.processedFrames = 0;
-    task->status.totalFrames = 0;
-    task->status.generatedImages = 0;
-    task->status.startTime = 0;
-    task->status.endTime = 0;
-    task->status.errorMessage = "";
+    task->status.processed_frames = 0;
+    task->status.total_frames = 0;
+    task->status.generated_images = 0;
+    task->status.start_time = 0;
+    task->status.end_time = 0;
+    task->status.error_message = "";
 
     // 设置输出目录
     if (config.output_dir.empty()) {
@@ -173,7 +174,7 @@ bool FFmpegSplitter::startTask(const std::string& taskId) {
 
     // 更新任务状态
     task->status.state = SplitTaskState::RUNNING;
-    task->status.startTime = std::chrono::duration_cast<std::chrono::milliseconds>(
+    task->status.start_time = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::system_clock::now().time_since_epoch()).count();
 
     // 调用状态回调
@@ -223,7 +224,7 @@ bool FFmpegSplitter::cancelTask(const std::string& taskId) {
 
     // 更新任务状态
     task->status.state = SplitTaskState::CANCELLED;
-    task->status.endTime = std::chrono::duration_cast<std::chrono::milliseconds>(
+    task->status.end_time = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::system_clock::now().time_since_epoch()).count();
 
     // 调用状态回调
@@ -246,9 +247,9 @@ SplitTaskStatus FFmpegSplitter::getTaskStatus(const std::string& taskId) const {
 
     if (it == tasks_.end()) {
         SplitTaskStatus emptyStatus;
-        emptyStatus.taskId = taskId;
+        emptyStatus.task_id = taskId;
         emptyStatus.state = SplitTaskState::ERROR;
-        emptyStatus.errorMessage = "任务不存在";
+        emptyStatus.error_message = "任务不存在";
         return emptyStatus;
     }
 
@@ -287,7 +288,7 @@ int FFmpegSplitter::cleanupCompletedTasks(int keepLastN) {
     // 按完成时间排序
     std::sort(completedTasks.begin(), completedTasks.end(),
              [](const std::shared_ptr<SplitTask>& a, const std::shared_ptr<SplitTask>& b) {
-                 return a->status.endTime > b->status.endTime;
+                 return a->status.end_time > b->status.end_time;
              });
 
     // 保留最近的N个任务
@@ -314,11 +315,11 @@ void FFmpegSplitter::executeTask(std::shared_ptr<SplitTask> task) {
     // 创建输出目录
     if (!createOutputDirectory(task->status.output_dir)) {
         task->status.state = SplitTaskState::ERROR;
-        task->status.errorMessage = "无法创建输出目录: " + task->status.output_dir;
-        task->status.endTime = std::chrono::duration_cast<std::chrono::milliseconds>(
+        task->status.error_message = "无法创建输出目录: " + task->status.output_dir;
+        task->status.end_time = std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::system_clock::now().time_since_epoch()).count();
         updateTaskStatus(task->taskId, task->status);
-        LOG_ERROR(task->status.errorMessage, "FFmpegSplitter");
+        LOG_ERROR(task->status.error_message, "FFmpegSplitter");
         return;
     }
 
@@ -328,26 +329,26 @@ void FFmpegSplitter::executeTask(std::shared_ptr<SplitTask> task) {
     int totalFrames;
     if (!getVideoInfo(task->config.input_path, width, height, duration, totalFrames, frameRate)) {
         task->status.state = SplitTaskState::ERROR;
-        task->status.errorMessage = "无法获取视频信息: " + task->config.input_path;
-        task->status.endTime = std::chrono::duration_cast<std::chrono::milliseconds>(
+        task->status.error_message = "无法获取视频信息: " + task->config.input_path;
+        task->status.end_time = std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::system_clock::now().time_since_epoch()).count();
         updateTaskStatus(task->taskId, task->status);
-        LOG_ERROR(task->status.errorMessage, "FFmpegSplitter");
+        LOG_ERROR(task->status.error_message, "FFmpegSplitter");
         return;
     }
 
     // 更新任务状态
-    task->status.totalFrames = totalFrames;
+    task->status.total_frames = totalFrames;
     updateTaskStatus(task->taskId, task->status);
 
     // 计算提取帧的间隔
     double interval;
-    if (task->config.time_interval) {
+    if (task->config.extract_by_time) {
         // 按时间间隔提取
         interval = task->config.interval;
-    } else if (task->config.frame_rate > 0) {
+    } else if (task->config.extract_by_frame) {
         // 按指定帧率提取
-        interval = 1.0 / task->config.frame_rate;
+        interval = 1.0 / frameRate;
     } else {
         // 按原始帧率提取
         interval = 1.0 / frameRate;
@@ -360,11 +361,11 @@ void FFmpegSplitter::executeTask(std::shared_ptr<SplitTask> task) {
         char err_buf[AV_ERROR_MAX_STRING_SIZE] = {0};
         av_strerror(ret, err_buf, AV_ERROR_MAX_STRING_SIZE);
         task->status.state = SplitTaskState::ERROR;
-        task->status.errorMessage = "无法打开输入文件: " + std::string(err_buf);
-        task->status.endTime = std::chrono::duration_cast<std::chrono::milliseconds>(
+        task->status.error_message = "无法打开输入文件: " + std::string(err_buf);
+        task->status.end_time = std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::system_clock::now().time_since_epoch()).count();
         updateTaskStatus(task->taskId, task->status);
-        LOG_ERROR(task->status.errorMessage, "FFmpegSplitter");
+        LOG_ERROR(task->status.error_message, "FFmpegSplitter");
         return;
     }
 
@@ -374,11 +375,11 @@ void FFmpegSplitter::executeTask(std::shared_ptr<SplitTask> task) {
         char err_buf[AV_ERROR_MAX_STRING_SIZE] = {0};
         av_strerror(ret, err_buf, AV_ERROR_MAX_STRING_SIZE);
         task->status.state = SplitTaskState::ERROR;
-        task->status.errorMessage = "无法获取流信息: " + std::string(err_buf);
-        task->status.endTime = std::chrono::duration_cast<std::chrono::milliseconds>(
+        task->status.error_message = "无法获取流信息: " + std::string(err_buf);
+        task->status.end_time = std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::system_clock::now().time_since_epoch()).count();
         updateTaskStatus(task->taskId, task->status);
-        LOG_ERROR(task->status.errorMessage, "FFmpegSplitter");
+        LOG_ERROR(task->status.error_message, "FFmpegSplitter");
         avformat_close_input(&format_context);
         return;
     }
@@ -394,11 +395,11 @@ void FFmpegSplitter::executeTask(std::shared_ptr<SplitTask> task) {
 
     if (video_stream_index == -1) {
         task->status.state = SplitTaskState::ERROR;
-        task->status.errorMessage = "未找到视频流";
-        task->status.endTime = std::chrono::duration_cast<std::chrono::milliseconds>(
+        task->status.error_message = "未找到视频流";
+        task->status.end_time = std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::system_clock::now().time_since_epoch()).count();
         updateTaskStatus(task->taskId, task->status);
-        LOG_ERROR(task->status.errorMessage, "FFmpegSplitter");
+        LOG_ERROR(task->status.error_message, "FFmpegSplitter");
         avformat_close_input(&format_context);
         return;
     }
@@ -410,11 +411,11 @@ void FFmpegSplitter::executeTask(std::shared_ptr<SplitTask> task) {
     const AVCodec* codec = avcodec_find_decoder(video_stream->codecpar->codec_id);
     if (!codec) {
         task->status.state = SplitTaskState::ERROR;
-        task->status.errorMessage = "未找到解码器";
-        task->status.endTime = std::chrono::duration_cast<std::chrono::milliseconds>(
+        task->status.error_message = "未找到解码器";
+        task->status.end_time = std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::system_clock::now().time_since_epoch()).count();
         updateTaskStatus(task->taskId, task->status);
-        LOG_ERROR(task->status.errorMessage, "FFmpegSplitter");
+        LOG_ERROR(task->status.error_message, "FFmpegSplitter");
         avformat_close_input(&format_context);
         return;
     }
@@ -423,11 +424,11 @@ void FFmpegSplitter::executeTask(std::shared_ptr<SplitTask> task) {
     AVCodecContext* codec_context = avcodec_alloc_context3(codec);
     if (!codec_context) {
         task->status.state = SplitTaskState::ERROR;
-        task->status.errorMessage = "无法创建解码器上下文";
-        task->status.endTime = std::chrono::duration_cast<std::chrono::milliseconds>(
+        task->status.error_message = "无法创建解码器上下文";
+        task->status.end_time = std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::system_clock::now().time_since_epoch()).count();
         updateTaskStatus(task->taskId, task->status);
-        LOG_ERROR(task->status.errorMessage, "FFmpegSplitter");
+        LOG_ERROR(task->status.error_message, "FFmpegSplitter");
         avformat_close_input(&format_context);
         return;
     }
@@ -438,11 +439,11 @@ void FFmpegSplitter::executeTask(std::shared_ptr<SplitTask> task) {
         char err_buf[AV_ERROR_MAX_STRING_SIZE] = {0};
         av_strerror(ret, err_buf, AV_ERROR_MAX_STRING_SIZE);
         task->status.state = SplitTaskState::ERROR;
-        task->status.errorMessage = "无法复制编解码器参数: " + std::string(err_buf);
-        task->status.endTime = std::chrono::duration_cast<std::chrono::milliseconds>(
+        task->status.error_message = "无法复制编解码器参数: " + std::string(err_buf);
+        task->status.end_time = std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::system_clock::now().time_since_epoch()).count();
         updateTaskStatus(task->taskId, task->status);
-        LOG_ERROR(task->status.errorMessage, "FFmpegSplitter");
+        LOG_ERROR(task->status.error_message, "FFmpegSplitter");
         avcodec_free_context(&codec_context);
         avformat_close_input(&format_context);
         return;
@@ -454,11 +455,11 @@ void FFmpegSplitter::executeTask(std::shared_ptr<SplitTask> task) {
         char err_buf[AV_ERROR_MAX_STRING_SIZE] = {0};
         av_strerror(ret, err_buf, AV_ERROR_MAX_STRING_SIZE);
         task->status.state = SplitTaskState::ERROR;
-        task->status.errorMessage = "无法打开解码器: " + std::string(err_buf);
-        task->status.endTime = std::chrono::duration_cast<std::chrono::milliseconds>(
+        task->status.error_message = "无法打开解码器: " + std::string(err_buf);
+        task->status.end_time = std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::system_clock::now().time_since_epoch()).count();
         updateTaskStatus(task->taskId, task->status);
-        LOG_ERROR(task->status.errorMessage, "FFmpegSplitter");
+        LOG_ERROR(task->status.error_message, "FFmpegSplitter");
         avcodec_free_context(&codec_context);
         avformat_close_input(&format_context);
         return;
@@ -469,11 +470,11 @@ void FFmpegSplitter::executeTask(std::shared_ptr<SplitTask> task) {
     AVPacket* packet = av_packet_alloc();
     if (!frame || !packet) {
         task->status.state = SplitTaskState::ERROR;
-        task->status.errorMessage = "无法分配帧或包";
-        task->status.endTime = std::chrono::duration_cast<std::chrono::milliseconds>(
+        task->status.error_message = "无法分配帧或包";
+        task->status.end_time = std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::system_clock::now().time_since_epoch()).count();
         updateTaskStatus(task->taskId, task->status);
-        LOG_ERROR(task->status.errorMessage, "FFmpegSplitter");
+        LOG_ERROR(task->status.error_message, "FFmpegSplitter");
         av_frame_free(&frame);
         av_packet_free(&packet);
         avcodec_free_context(&codec_context);
@@ -490,11 +491,11 @@ void FFmpegSplitter::executeTask(std::shared_ptr<SplitTask> task) {
 
     if (!sws_context) {
         task->status.state = SplitTaskState::ERROR;
-        task->status.errorMessage = "无法创建SwsContext";
-        task->status.endTime = std::chrono::duration_cast<std::chrono::milliseconds>(
+        task->status.error_message = "无法创建SwsContext";
+        task->status.end_time = std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::system_clock::now().time_since_epoch()).count();
         updateTaskStatus(task->taskId, task->status);
-        LOG_ERROR(task->status.errorMessage, "FFmpegSplitter");
+        LOG_ERROR(task->status.error_message, "FFmpegSplitter");
         av_frame_free(&frame);
         av_packet_free(&packet);
         avcodec_free_context(&codec_context);
@@ -506,11 +507,11 @@ void FFmpegSplitter::executeTask(std::shared_ptr<SplitTask> task) {
     AVFrame* rgb_frame = av_frame_alloc();
     if (!rgb_frame) {
         task->status.state = SplitTaskState::ERROR;
-        task->status.errorMessage = "无法分配RGB帧";
-        task->status.endTime = std::chrono::duration_cast<std::chrono::milliseconds>(
+        task->status.error_message = "无法分配RGB帧";
+        task->status.end_time = std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::system_clock::now().time_since_epoch()).count();
         updateTaskStatus(task->taskId, task->status);
-        LOG_ERROR(task->status.errorMessage, "FFmpegSplitter");
+        LOG_ERROR(task->status.error_message, "FFmpegSplitter");
         sws_freeContext(sws_context);
         av_frame_free(&frame);
         av_packet_free(&packet);
@@ -530,11 +531,11 @@ void FFmpegSplitter::executeTask(std::shared_ptr<SplitTask> task) {
         char err_buf[AV_ERROR_MAX_STRING_SIZE] = {0};
         av_strerror(ret, err_buf, AV_ERROR_MAX_STRING_SIZE);
         task->status.state = SplitTaskState::ERROR;
-        task->status.errorMessage = "无法分配RGB帧缓冲区: " + std::string(err_buf);
-        task->status.endTime = std::chrono::duration_cast<std::chrono::milliseconds>(
+        task->status.error_message = "无法分配RGB帧缓冲区: " + std::string(err_buf);
+        task->status.end_time = std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::system_clock::now().time_since_epoch()).count();
         updateTaskStatus(task->taskId, task->status);
-        LOG_ERROR(task->status.errorMessage, "FFmpegSplitter");
+        LOG_ERROR(task->status.error_message, "FFmpegSplitter");
         av_frame_free(&rgb_frame);
         sws_freeContext(sws_context);
         av_frame_free(&frame);
@@ -598,23 +599,20 @@ void FFmpegSplitter::executeTask(std::shared_ptr<SplitTask> task) {
                     ss << task->status.output_dir << "/frame_"
                        << std::setw(6) << std::setfill('0') << image_count;
 
-                    if (task->config.preserve_timestamps) {
-                        ss << "_" << std::fixed << std::setprecision(3) << timestamp;
-                    }
+                    // 添加时间戳到文件名
+                    ss << "_" << std::fixed << std::setprecision(3) << timestamp;
 
                     ss << "." << task->config.output_format;
                     std::string output_path = ss.str();
 
                     // 保存图像
-                    if (extractFrameAndSave(output_path, rgb_frame->width, rgb_frame->height, task->config.output_format, task->config.quality)) {
+                    if (extractFrameAndSave(task->config.input_path, output_path, timestamp, rgb_frame->width, rgb_frame->height, task->config.output_format, task->config.quality)) {
                         image_count++;
 
                         // 生成缩略图
-                        if (task->config.generate_thumbnails) {
-                            std::string thumbnail_path = task->status.output_dir + "/thumbnails/thumb_" +
-                                                       std::to_string(image_count) + "." + task->config.output_format;
-                            generateThumbnail(output_path, thumbnail_path, task->config.thumbnail_size);
-                        }
+                        std::string thumbnail_path = task->status.output_dir + "/thumbnails/thumb_" +
+                                                   std::to_string(image_count) + "." + task->config.output_format;
+                        generateThumbnail(output_path, thumbnail_path, 128);
                     }
 
                     // 更新下一个时间戳
@@ -625,9 +623,9 @@ void FFmpegSplitter::executeTask(std::shared_ptr<SplitTask> task) {
             frame_count++;
 
             // 更新进度
-            task->status.processedFrames = frame_count;
-            task->status.generatedImages = image_count;
-            task->status.progress = static_cast<double>(frame_count) / task->status.totalFrames;
+            task->status.processed_frames = frame_count;
+            task->status.generated_images = image_count;
+            task->status.progress = static_cast<double>(frame_count) / task->status.total_frames;
             updateTaskStatus(task->taskId, task->status);
 
             av_frame_unref(frame);
@@ -654,7 +652,7 @@ void FFmpegSplitter::executeTask(std::shared_ptr<SplitTask> task) {
         LOG_INFO("分帧任务已完成: " + task->taskId, "FFmpegSplitter");
     }
 
-    task->status.endTime = std::chrono::duration_cast<std::chrono::milliseconds>(
+    task->status.end_time = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::system_clock::now().time_since_epoch()).count();
     updateTaskStatus(task->taskId, task->status);
 }
@@ -779,7 +777,8 @@ bool FFmpegSplitter::createOutputDirectory(const std::string& dirPath) {
     return true;
 }
 
-bool FFmpegSplitter::extractFrameAndSave(const std::string& outputPath, int width, int height,
+bool FFmpegSplitter::extractFrameAndSave(const std::string& videoPath, const std::string& outputPath,
+                                        double timestamp, int width, int height,
                                         const std::string& format, int quality) {
     // 这里使用OpenCV保存图像，因为FFmpeg的图像保存功能比较复杂
     // 在实际项目中，可以使用FFmpeg的AVOutputFormat和AVCodec来保存图像

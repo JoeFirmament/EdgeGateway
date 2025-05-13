@@ -103,6 +103,12 @@ public:
      */
     bool setParams(const CameraParams& params) override;
 
+    /**
+     * @brief 扫描系统中的摄像头设备
+     * @return 设备信息列表
+     */
+    std::vector<CameraDeviceInfo> scanDevices();
+
 private:
     // 初始化设备
     bool initDevice();
@@ -112,6 +118,9 @@ private:
     void freeMmap();
     // 查询设备能力
     bool queryCapabilities();
+
+    // 查询设备支持的格式和分辨率
+    void queryCapabilities(int fd, CameraDeviceInfo& deviceInfo);
     // 设置视频格式
     bool setVideoFormat(int width, int height, uint32_t pixelformat);
     // 设置帧率

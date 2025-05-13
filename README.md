@@ -32,23 +32,32 @@ cam_server_cpp/
 ├── CMakeLists.txt                # 主CMake配置文件
 ├── cmake/                        # CMake模块和配置
 ├── dev_env.md                    # 开发环境配置文档
-├── dev_log.md                    # 开发日志文档
-├── dev_board_log.md              # 开发板环境日志
 ├── docs/                         # 文档
 ├── include/                      # 头文件
 │   ├── camera/                   # 摄像头模块头文件
+│   │   ├── camera_device.h       # 摄像头设备接口
+│   │   └── v4l2_camera.h         # V4L2摄像头实现
 │   ├── video/                    # 视频处理模块头文件
+│   │   ├── i_video_recorder.h    # 视频录制接口
+│   │   ├── video_recorder.h      # 视频录制相关结构体定义
+│   │   ├── i_video_splitter.h    # 视频分割接口
+│   │   └── video_splitter.h      # 视频分割相关结构体定义
 │   ├── api/                      # API服务模块头文件
 │   ├── storage/                  # 存储管理模块头文件
 │   ├── monitor/                  # 系统监控模块头文件
 │   ├── system/                   # 系统信息模块头文件
 │   └── utils/                    # 工具类和通用功能
-├── libs/                         # 第三方库
+├── third_party/                  # 第三方库
+│   └── mongoose/                 # Mongoose嵌入式Web服务器
 ├── referenceDoc/                 # 参考文档（原Rust项目）
 ├── scripts/                      # 构建和部署脚本
 ├── src/                          # 源文件
 │   ├── camera/                   # 摄像头模块实现
+│   │   ├── camera_manager.cpp    # 摄像头管理器
+│   │   └── v4l2_camera.cpp       # V4L2摄像头实现
 │   ├── video/                    # 视频处理模块实现
+│   │   ├── ffmpeg_recorder.cpp   # FFmpeg视频录制实现
+│   │   └── ffmpeg_splitter.cpp   # FFmpeg视频分割实现
 │   ├── api/                      # API服务模块实现
 │   ├── storage/                  # 存储管理模块实现
 │   ├── monitor/                  # 系统监控模块实现
@@ -180,6 +189,23 @@ http://<rk3588-ip-address>:8080/api/stream/mjpeg?width=1280&height=720&quality=8
 
 这些文档对于项目的长期维护和新开发人员的加入非常重要，请确保它们始终保持最新状态。
 
+### 当前开发进度
+
+#### 已完成模块
+- **摄像头模块**：实现了CameraDevice接口和V4L2Camera类，支持摄像头设备的基本操作
+- **视频录制模块**：实现了IVideoRecorder接口和FFmpegRecorder类，支持视频流的编码和录制
+- **视频分割模块**：实现了IVideoSplitter接口和FFmpegSplitter类，支持将视频文件拆分为静态图像帧
+
+#### 进行中模块
+- **API服务模块**：正在实现Web服务器和REST API接口
+- **MJPEG流媒体服务**：正在实现基于HTTP的MJPEG流媒体服务
+
+#### 待实现模块
+- **系统监控模块**：监控系统资源使用情况
+- **配置管理模块**：管理系统配置参数
+- **存储管理模块**：管理视频文件和图像文件的存储
+- **Web客户端**：实现基于浏览器的用户界面
+
 ## 项目文档
 
 ### 核心文档
@@ -245,4 +271,30 @@ http://<rk3588-ip-address>:8080/api/stream/mjpeg?width=1280&height=720&quality=8
 
 ## 贡献指南
 
-[待定]
+### 代码贡献流程
+1. Fork项目仓库
+2. 创建功能分支 (`git checkout -b feature/amazing-feature`)
+3. 提交更改 (`git commit -m 'Add some amazing feature'`)
+4. 推送到分支 (`git push origin feature/amazing-feature`)
+5. 创建Pull Request
+
+### 开发规范
+- 遵循C++17/20标准
+- 使用4空格缩进
+- 类名使用PascalCase命名法
+- 方法和变量使用snake_case命名法
+- 常量使用UPPER_CASE命名法
+- 所有代码必须包含适当的注释
+- 所有公共API必须有文档注释
+- 提交前运行单元测试确保代码质量
+
+### 文档贡献
+- 更新技术文档以反映代码变更
+- 改进用户文档使其更加清晰易懂
+- 添加示例和教程帮助用户理解系统
+
+### 问题报告
+- 使用GitHub Issues报告bug
+- 包含详细的复现步骤
+- 如果可能，提供日志和截图
+- 标记相关的标签以便分类

@@ -12,6 +12,18 @@
 
 namespace fs = std::filesystem;
 
+// 辅助函数：将std::filesystem::file_time_type转换为std::chrono::system_clock::time_point
+std::chrono::system_clock::time_point fileTimeToSystemTime(const std::filesystem::file_time_type& file_time) {
+    // 将file_time转换为time_t
+    auto file_time_since_epoch = file_time.time_since_epoch();
+    auto file_time_sec = std::chrono::duration_cast<std::chrono::seconds>(file_time_since_epoch);
+
+    // 创建system_clock时间点
+    std::chrono::system_clock::time_point system_time = std::chrono::system_clock::from_time_t(file_time_sec.count());
+
+    return system_time;
+}
+
 namespace cam_server {
 namespace storage {
 
@@ -73,8 +85,8 @@ std::vector<FileInfo> FileManager::getFileList(const std::string& dir_path, bool
                 file_info.name = entry.path().filename().string();
                 file_info.path = entry.path().string();
                 file_info.size = entry.file_size();
-                file_info.create_time = entry.last_write_time();
-                file_info.modify_time = entry.last_write_time();
+                file_info.create_time = fileTimeToSystemTime(entry.last_write_time());
+                file_info.modify_time = fileTimeToSystemTime(entry.last_write_time());
                 file_info.extension = entry.path().extension().string();
 
                 // 确定文件类型
@@ -127,8 +139,8 @@ std::vector<DirectoryInfo> FileManager::getDirectoryList(const std::string& dir_
                 DirectoryInfo dir_info;
                 dir_info.name = entry.path().filename().string();
                 dir_info.path = entry.path().string();
-                dir_info.create_time = entry.last_write_time();
-                dir_info.modify_time = entry.last_write_time();
+                dir_info.create_time = fileTimeToSystemTime(entry.last_write_time());
+                dir_info.modify_time = fileTimeToSystemTime(entry.last_write_time());
 
                 // 统计文件和子目录数量
                 int file_count = 0;
@@ -297,8 +309,8 @@ FileInfo FileManager::getFileInfo(const std::string& file_path) const {
         file_info.name = fs_path.filename().string();
         file_info.path = path;
         file_info.size = fs::file_size(fs_path);
-        file_info.create_time = fs::last_write_time(fs_path);
-        file_info.modify_time = fs::last_write_time(fs_path);
+        file_info.create_time = fileTimeToSystemTime(fs::last_write_time(fs_path));
+        file_info.modify_time = fileTimeToSystemTime(fs::last_write_time(fs_path));
         file_info.extension = fs_path.extension().string();
 
         // 确定文件类型
@@ -337,8 +349,8 @@ DirectoryInfo FileManager::getDirectoryInfo(const std::string& dir_path) const {
         DirectoryInfo dir_info;
         dir_info.name = fs_path.filename().string();
         dir_info.path = path;
-        dir_info.create_time = fs::last_write_time(fs_path);
-        dir_info.modify_time = fs::last_write_time(fs_path);
+        dir_info.create_time = fileTimeToSystemTime(fs::last_write_time(fs_path));
+        dir_info.modify_time = fileTimeToSystemTime(fs::last_write_time(fs_path));
 
         // 统计文件和子目录数量
         int file_count = 0;

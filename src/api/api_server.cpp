@@ -45,7 +45,7 @@ bool ApiServer::initialize(const ApiServerConfig& config) {
     config_ = config;
 
     // 创建REST处理器
-    rest_handler_ = std::make_unique<RestHandler>();
+    rest_handler_ = std::make_shared<RestHandler>();
     if (!rest_handler_->initialize(config.enable_api_key, config.api_key)) {
         LOG_ERROR("无法初始化REST处理器", "ApiServer");
         return false;
@@ -160,13 +160,13 @@ bool ApiServer::stop() {
 
 ApiServerStatus ApiServer::getStatus() const {
     std::lock_guard<std::mutex> lock(status_mutex_);
-    
+
     // 更新请求计数和错误计数
     if (web_server_ && status_.state == ApiServerState::RUNNING) {
         status_.request_count = web_server_->getRequestCount();
         status_.error_count = web_server_->getErrorCount();
     }
-    
+
     return status_;
 }
 
@@ -182,7 +182,7 @@ bool ApiServer::registerHandler(const std::string& path, const std::string& meth
         response.status_code = 200;
         response.status_message = "OK";
         response.content_type = "application/json";
-        
+
         try {
             handler(request.body, response.body);
         } catch (const std::exception& e) {
@@ -190,7 +190,7 @@ bool ApiServer::registerHandler(const std::string& path, const std::string& meth
             response.status_message = "Internal Server Error";
             response.body = "{\"error\":\"" + std::string(e.what()) + "\"}";
         }
-        
+
         return response;
     };
 
@@ -252,42 +252,42 @@ void ApiServer::registerApiRoutes() {
         // 设置流回调
         response.stream_callback = [client_id, width, height, quality, fps](
             std::function<void(const std::vector<uint8_t>&)> send_data) {
-            
+
             // 初始化MJPEG流处理器
             auto& streamer = MjpegStreamer::getInstance();
-            
+
             MjpegStreamerConfig config;
             config.jpeg_quality = quality;
             config.max_fps = fps;
             config.max_clients = 100;
             config.output_width = width;
             config.output_height = height;
-            
+
             if (!streamer.initialize(config)) {
                 LOG_ERROR("无法初始化MJPEG流处理器", "ApiServer");
                 return;
             }
-            
+
             if (!streamer.start()) {
                 LOG_ERROR("无法启动MJPEG流处理器", "ApiServer");
                 return;
             }
-            
+
             // 添加客户端
             streamer.addClient(
                 client_id,
                 [send_data](const std::vector<uint8_t>& jpeg_data) {
                     // 构建MJPEG帧
-                    std::string frame_header = "--frame\r\nContent-Type: image/jpeg\r\nContent-Length: " + 
+                    std::string frame_header = "--frame\r\nContent-Type: image/jpeg\r\nContent-Length: " +
                                               std::to_string(jpeg_data.size()) + "\r\n\r\n";
-                    
+
                     // 发送帧头
                     std::vector<uint8_t> header_data(frame_header.begin(), frame_header.end());
                     send_data(header_data);
-                    
+
                     // 发送JPEG数据
                     send_data(jpeg_data);
-                    
+
                     // 发送帧尾
                     std::string frame_footer = "\r\n";
                     std::vector<uint8_t> footer_data(frame_footer.begin(), frame_footer.end());
@@ -303,7 +303,7 @@ void ApiServer::registerApiRoutes() {
                     LOG_INFO("MJPEG客户端已关闭: " + client_id, "ApiServer");
                 }
             );
-            
+
             LOG_INFO("MJPEG客户端已连接: " + client_id, "ApiServer");
         };
 
@@ -326,7 +326,7 @@ std::string ApiServer::generateClientId() {
         ss << hex[dis(gen)];
     }
     ss << "-" << utils::TimeUtils::getCurrentTimeMillis();
-    
+
     return ss.str();
 }
 

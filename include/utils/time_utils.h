@@ -4,6 +4,7 @@
 #include <string>
 #include <chrono>
 #include <ctime>
+#include <thread>
 
 namespace cam_server {
 namespace utils {

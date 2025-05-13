@@ -1,9 +1,9 @@
 # 设置源文件
 set(API_SOURCES
     api_server.cpp
-    rest_handler.cpp
     web_server.cpp
     mjpeg_streamer.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/mongoose/mongoose.c
 )
 
 # 创建库
@@ -13,6 +13,7 @@ add_library(api_module STATIC ${API_SOURCES})
 target_include_directories(api_module PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/../../include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/mongoose
 )
 
 # 链接库
