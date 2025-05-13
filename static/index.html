@@ -92,10 +92,16 @@
 <body>
     <div class="container">
         <h1>摄像头实时预览</h1>
-        
+
+        <div style="text-align: center; margin-bottom: 20px;">
+            <a href="cameras.html" style="display: inline-block; padding: 10px 20px; background-color: #2196F3; color: white; text-decoration: none; border-radius: 4px; margin-right: 10px;">
+                摄像头设备管理
+            </a>
+        </div>
+
         <div class="stream-container">
             <img id="stream" class="stream-view" alt="摄像头实时预览" src="/api/stream">
-            
+
             <div class="controls">
                 <div class="control-group">
                     <label for="resolution">分辨率:</label>
@@ -106,12 +112,12 @@
                         <option value="1920x1080">1920x1080 (Full HD)</option>
                     </select>
                 </div>
-                
+
                 <div class="control-group">
                     <label for="quality">质量 (1-100):</label>
                     <input type="number" id="quality" min="1" max="100" value="80">
                 </div>
-                
+
                 <div class="control-group">
                     <label for="fps">帧率:</label>
                     <select id="fps">
@@ -124,23 +130,23 @@
                     </select>
                 </div>
             </div>
-            
+
             <div class="controls" style="margin-top: 10px;">
                 <button id="apply">应用设置</button>
                 <button id="refresh">刷新流</button>
             </div>
-            
+
             <div id="status" class="status connected">
                 已连接到摄像头流
             </div>
-            
+
             <div class="info">
                 <p>提示: 如果流无法显示，请检查摄像头是否已连接并正常工作。</p>
                 <p>您可以调整分辨率、质量和帧率来优化性能和图像质量。</p>
             </div>
         </div>
     </div>
-    
+
     <script>
         document.addEventListener('DOMContentLoaded', function() {
             const streamImg = document.getElementById('stream');
@@ -150,19 +156,19 @@
             const applyButton = document.getElementById('apply');
             const refreshButton = document.getElementById('refresh');
             const statusDiv = document.getElementById('status');
-            
+
             // 应用设置
             function applySettings() {
                 const [width, height] = resolutionSelect.value.split('x');
                 const quality = qualityInput.value;
                 const fps = fpsSelect.value;
-                
+
                 const streamUrl = `/api/stream?width=${width}&height=${height}&quality=${quality}&fps=${fps}`;
                 streamImg.src = streamUrl;
-                
+
                 console.log(`应用新设置: 分辨率=${width}x${height}, 质量=${quality}, 帧率=${fps}`);
             }
-            
+
             // 刷新流
             function refreshStream() {
                 const currentSrc = streamImg.src;
@@ -171,7 +177,7 @@
                     streamImg.src = currentSrc;
                 }, 100);
             }
-            
+
             // 检查流状态
             function checkStreamStatus() {
                 if (streamImg.complete && streamImg.naturalWidth > 0) {
@@ -182,15 +188,15 @@
                     statusDiv.textContent = '无法连接到摄像头流';
                 }
             }
-            
+
             // 事件监听器
             applyButton.addEventListener('click', applySettings);
             refreshButton.addEventListener('click', refreshStream);
-            
+
             // 图像加载事件
             streamImg.addEventListener('load', checkStreamStatus);
             streamImg.addEventListener('error', checkStreamStatus);
-            
+
             // 初始检查
             setTimeout(checkStreamStatus, 1000);
         });

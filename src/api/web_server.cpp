@@ -12,8 +12,8 @@
 #include <atomic>
 #include <thread>
 #include <chrono>
-#include <filesystem>
-#include <cstdlib>  // for memset
+#include <cstdlib>  // for memset and system()
+#include <sys/stat.h>
 
 // 使用Mongoose作为HTTP服务器库
 #include "mongoose.h"
@@ -37,9 +37,11 @@ public:
 
     bool start() {
         if (is_running_) {
+            LOG_INFO("Web服务器已经在运行中", "WebServer");
             return true;
         }
 
+        LOG_INFO("正在初始化Mongoose管理器", "WebServer");
         // 初始化Mongoose管理器
         mg_mgr_init(&mg_mgr_);
 
@@ -50,30 +52,61 @@ public:
         } else {
             listen_addr = "http://" + config_.address + ":" + std::to_string(config_.port);
         }
+        LOG_INFO("Web服务器监听地址: " + listen_addr, "WebServer");
+
+        // 检查静态文件目录
+        LOG_INFO("静态文件目录: " + config_.static_files_dir, "WebServer");
+        struct stat st;
+        if (stat(config_.static_files_dir.c_str(), &st) != 0) {
+            LOG_WARNING("静态文件目录不存在: " + config_.static_files_dir, "WebServer");
+            try {
+                // 使用系统命令创建目录
+                std::string cmd = "mkdir -p " + config_.static_files_dir;
+                int result = ::system(cmd.c_str());
+                if (result == 0) {
+                    LOG_INFO("已创建静态文件目录: " + config_.static_files_dir, "WebServer");
+                } else {
+                    LOG_ERROR("无法创建静态文件目录，错误码: " + std::to_string(result), "WebServer");
+                }
+            } catch (const std::exception& e) {
+                LOG_ERROR("无法创建静态文件目录: " + std::string(e.what()), "WebServer");
+            }
+        }
 
         // 创建HTTP连接
+        LOG_INFO("正在创建HTTP连接...", "WebServer");
         struct mg_connection* nc = mg_http_listen(&mg_mgr_, listen_addr.c_str(), eventHandler, NULL);
         if (nc == nullptr) {
             LOG_ERROR("无法启动Web服务器: " + listen_addr, "WebServer");
             mg_mgr_free(&mg_mgr_);
             return false;
         }
+        LOG_INFO("HTTP连接创建成功", "WebServer");
         nc->fn_data = this;
 
         // 配置SSL
         if (config_.use_https) {
+            LOG_INFO("正在配置SSL...", "WebServer");
             struct mg_tls_opts opts = {};
             opts.cert = mg_str(config_.ssl_cert_path.c_str());
             opts.key = mg_str(config_.ssl_key_path.c_str());
             mg_tls_init(nc, &opts);
+            LOG_INFO("SSL配置完成", "WebServer");
         }
 
         // 启动服务器线程
+        LOG_INFO("正在启动服务器线程...", "WebServer");
         is_running_ = true;
         server_thread_ = std::thread([this]() {
+            LOG_INFO("服务器线程已启动", "WebServer");
             while (is_running_) {
-                mg_mgr_poll(&mg_mgr_, 1000);
+                try {
+                    mg_mgr_poll(&mg_mgr_, 1000);
+                } catch (const std::exception& e) {
+                    LOG_ERROR("服务器线程异常: " + std::string(e.what()), "WebServer");
+                }
             }
+            LOG_INFO("服务器线程已退出", "WebServer");
         });
 
         LOG_INFO("Web服务器已启动: " + listen_addr, "WebServer");
@@ -203,12 +236,17 @@ public:
         std::string file_path = config_.static_files_dir + path;
 
         // 检查文件是否存在
-        if (!std::filesystem::exists(file_path) || !std::filesystem::is_regular_file(file_path)) {
+        struct stat st;
+        if (stat(file_path.c_str(), &st) != 0 || !S_ISREG(st.st_mode)) {
             return false;
         }
 
         // 获取文件扩展名
-        std::string ext = std::filesystem::path(file_path).extension().string();
+        std::string ext;
+        size_t dot_pos = file_path.find_last_of('.');
+        if (dot_pos != std::string::npos) {
+            ext = file_path.substr(dot_pos);
+        }
         std::string content_type = getContentTypeFromExtension(ext);
 
         // 发送文件

@@ -5,6 +5,8 @@
 #include <thread>
 #include <chrono>
 #include <getopt.h>
+#include <sys/stat.h>
+#include <cstdlib>  // for system()
 
 // 包含各模块的头文件
 #include "camera/camera_manager.h"
@@ -21,11 +23,20 @@ using namespace cam_server;
 
 // 全局变量，用于信号处理
 volatile sig_atomic_t g_running = 1;
+volatile sig_atomic_t g_signal_received = 0;
 
 // 信号处理函数
 void signal_handler(int signal) {
     std::cout << "接收到信号: " << signal << std::endl;
     g_running = 0;
+    g_signal_received = signal;
+
+    // 如果多次接收到信号，强制退出
+    static int signal_count = 0;
+    if (++signal_count >= 3) {
+        std::cout << "强制退出程序..." << std::endl;
+        exit(1);
+    }
 }
 
 // 打印欢迎信息
@@ -210,12 +221,13 @@ bool initialize_camera_manager(const std::string& device_path, const std::string
 
 // 初始化API服务器
 bool initialize_api_server() {
+    LOG_INFO("正在初始化API服务器...", "Main");
     auto& config = utils::ConfigManager::getInstance();
 
     api::ApiServerConfig api_config;
     api_config.address = config.getString("api.address", "0.0.0.0");
     api_config.port = config.getInt("api.port", 8080);
-    api_config.static_files_dir = config.getString("api.static_files_dir", "web");
+    api_config.static_files_dir = config.getString("api.static_files_dir", "static");
     api_config.use_https = config.getBool("api.use_https", false);
     api_config.ssl_cert_path = config.getString("api.ssl_cert_path", "");
     api_config.ssl_key_path = config.getString("api.ssl_key_path", "");
@@ -224,6 +236,27 @@ bool initialize_api_server() {
     api_config.enable_api_key = config.getBool("api.enable_api_key", false);
     api_config.api_key = config.getString("api.api_key", "");
     api_config.log_level = config.getString("api.log_level", "info");
+
+    LOG_INFO("API服务器配置: 地址=" + api_config.address + ", 端口=" + std::to_string(api_config.port) +
+             ", 静态文件目录=" + api_config.static_files_dir, "Main");
+
+    // 检查静态文件目录是否存在
+    struct stat st;
+    if (stat(api_config.static_files_dir.c_str(), &st) != 0) {
+        LOG_WARNING("静态文件目录不存在: " + api_config.static_files_dir + "，尝试创建", "Main");
+        try {
+            // 使用系统命令创建目录
+            std::string cmd = "mkdir -p " + api_config.static_files_dir;
+            int result = ::system(cmd.c_str());
+            if (result == 0) {
+                LOG_INFO("已创建静态文件目录: " + api_config.static_files_dir, "Main");
+            } else {
+                LOG_ERROR("无法创建静态文件目录，错误码: " + std::to_string(result), "Main");
+            }
+        } catch (const std::exception& e) {
+            LOG_ERROR("无法创建静态文件目录: " + std::string(e.what()), "Main");
+        }
+    }
 
     return api::ApiServer::getInstance().initialize(api_config);
 }
@@ -239,8 +272,10 @@ bool initialize_system_monitor() {
 
 int main(int argc, char* argv[]) {
     // 设置信号处理
-    std::signal(SIGINT, signal_handler);
-    std::signal(SIGTERM, signal_handler);
+    std::signal(SIGINT, signal_handler);   // Ctrl+C
+    std::signal(SIGTERM, signal_handler);  // 终止信号
+    std::signal(SIGABRT, signal_handler);  // 异常终止信号
+    std::signal(SIGQUIT, signal_handler);  // Ctrl+\
 
     // 打印欢迎信息
     print_welcome();
@@ -320,14 +355,33 @@ int main(int argc, char* argv[]) {
 
         // 主循环
         while (g_running) {
-            // 执行周期性任务
-            // 1. 检查存储空间
-            storage::StorageManager::getInstance().autoCleanup(false);
+            try {
+                // 执行周期性任务
+                // 1. 检查存储空间
+                storage::StorageManager::getInstance().autoCleanup(false);
 
-            // 2. 更新系统状态
-            // 这部分由SystemMonitor自动完成
+                // 2. 更新系统状态
+                // 这部分由SystemMonitor自动完成
 
-            std::this_thread::sleep_for(std::chrono::seconds(10));
+                // 使用较短的睡眠时间，以便更快地响应信号
+                for (int i = 0; i < 10 && g_running; ++i) {
+                    std::this_thread::sleep_for(std::chrono::seconds(1));
+
+                    // 检查是否收到信号
+                    if (g_signal_received) {
+                        std::cout << "正在处理信号: " << g_signal_received << "..." << std::endl;
+                        break;
+                    }
+                }
+            } catch (const std::exception& e) {
+                LOG_ERROR("主循环异常: " + std::string(e.what()), "Main");
+                std::cerr << "主循环异常: " << e.what() << std::endl;
+                break;
+            } catch (...) {
+                LOG_ERROR("主循环未知异常", "Main");
+                std::cerr << "主循环未知异常" << std::endl;
+                break;
+            }
         }
 
         LOG_INFO("摄像头服务器正在关闭...", "Main");

@@ -2,6 +2,7 @@
 #include "api/rest_handler.h"
 #include "api/web_server.h"
 #include "api/mjpeg_streamer.h"
+#include "api/camera_api.h"
 #include "monitor/logger.h"
 #include "utils/time_utils.h"
 
@@ -80,6 +81,7 @@ bool ApiServer::initialize(const ApiServerConfig& config) {
 }
 
 bool ApiServer::start() {
+    LOG_INFO("正在启动API服务器...", "ApiServer");
     if (!is_initialized_) {
         LOG_ERROR("API服务器未初始化", "ApiServer");
         return false;
@@ -88,15 +90,23 @@ bool ApiServer::start() {
     {
         std::lock_guard<std::mutex> lock(status_mutex_);
         if (status_.state == ApiServerState::RUNNING || status_.state == ApiServerState::STARTING) {
+            LOG_INFO("API服务器已经在运行中或正在启动", "ApiServer");
             return true;
         }
+        LOG_INFO("更新API服务器状态为STARTING", "ApiServer");
         status_.state = ApiServerState::STARTING;
         if (status_callback_) {
             status_callback_(status_);
         }
     }
 
+    // 检查配置
+    LOG_INFO("API服务器配置: 地址=" + config_.address + ", 端口=" + std::to_string(config_.port) +
+             ", HTTPS=" + (config_.use_https ? "是" : "否") +
+             ", 静态文件目录=" + config_.static_files_dir, "ApiServer");
+
     // 启动Web服务器
+    LOG_INFO("正在启动Web服务器...", "ApiServer");
     if (!web_server_->start()) {
         std::lock_guard<std::mutex> lock(status_mutex_);
         status_.state = ApiServerState::ERROR;
@@ -107,10 +117,12 @@ bool ApiServer::start() {
         LOG_ERROR("无法启动Web服务器", "ApiServer");
         return false;
     }
+    LOG_INFO("Web服务器启动成功", "ApiServer");
 
     // 更新状态
     {
         std::lock_guard<std::mutex> lock(status_mutex_);
+        LOG_INFO("更新API服务器状态为RUNNING", "ApiServer");
         status_.state = ApiServerState::RUNNING;
         status_.address = config_.address;
         status_.port = config_.port;
@@ -209,6 +221,18 @@ void ApiServer::setStatusCallback(std::function<void(const ApiServerStatus&)> ca
 void ApiServer::registerApiRoutes() {
     if (!rest_handler_) {
         return;
+    }
+
+    // 初始化并注册摄像头API
+    auto& camera_api = CameraApi::getInstance();
+    if (!camera_api.initialize()) {
+        LOG_ERROR("无法初始化摄像头API", "ApiServer");
+    } else {
+        if (!camera_api.registerRoutes(*rest_handler_)) {
+            LOG_ERROR("无法注册摄像头API路由", "ApiServer");
+        } else {
+            LOG_INFO("摄像头API路由注册成功", "ApiServer");
+        }
     }
 
     // 注册MJPEG流端点

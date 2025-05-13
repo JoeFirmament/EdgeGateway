@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.10)
-project(cam_server_cpp VERSION 0.1.0 LANGUAGES CXX)
+project(cam_server_cpp VERSION 0.1.0 LANGUAGES C CXX)
 
 # 设置C++标准
 set(CMAKE_CXX_STANDARD 17)
@@ -96,6 +96,7 @@ set(UTILS_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/include/utils)
 
 # 添加子目录
 add_subdirectory(src)
+add_subdirectory(src/tools)
 
 # 可选：添加测试
 option(BUILD_TESTS "Build tests" OFF)
