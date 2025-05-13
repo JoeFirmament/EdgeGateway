@@ -1,0 +1,77 @@
+# 构建目录
+/build/
+/bin/
+/lib/
+
+# CMake生成的文件
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+compile_commands.json
+CTestTestfile.cmake
+_deps/
+
+# 编译生成的文件
+*.o
+*.obj
+*.so
+*.a
+*.dll
+*.dylib
+*.exe
+*.out
+*.app
+
+# 编辑器和IDE文件
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# 日志文件
+*.log
+logs/
+
+# 临时文件
+*.tmp
+temp/
+tmp/
+
+# 视频和图像文件
+*.mp4
+*.avi
+*.mov
+*.jpg
+*.jpeg
+*.png
+*.gif
+*.bmp
+/data/videos/
+/data/images/
+/data/archives/
+/data/temp/
+
+# 配置文件（可能包含敏感信息）
+# 注意：通常应该包含示例配置文件，但排除实际使用的配置文件
+/config/*.json
+!/config/*.json.example
+
+# 第三方库（如果使用git子模块或包管理器管理）
+/third_party/mongoose/
+
+# 依赖库（如果本地构建）
+/deps/
+
+# 系统特定文件
+.directory
+Thumbs.db
+
+# 调试文件
+*.dSYM/
+*.su
+*.idb
+*.pdb
+core
