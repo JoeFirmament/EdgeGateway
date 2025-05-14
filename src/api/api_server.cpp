@@ -422,11 +422,18 @@ void ApiServer::registerApiRoutes() {
             if (fps > 60) fps = 60;
         }
 
+        // 获取客户端ID（如果前端提供了客户端ID，则使用前端提供的，否则生成一个新的）
+        std::string client_id_hint = "";
+        auto client_id_it = request.query_params.find("client_id");
+        if (client_id_it != request.query_params.end()) {
+            client_id_hint = client_id_it->second;
+        }
+
         // 生成客户端ID
-        std::string client_id = ApiServer::getInstance().generateClientId();
+        std::string client_id = ApiServer::getInstance().generateClientId(client_id_hint);
 
         // 设置流回调
-        response.stream_callback = [client_id, width, height, quality, fps](
+        response.stream_callback = [client_id, width, height, quality, fps, &request](
             std::function<void(const std::vector<uint8_t>&)> send_data) {
 
             // 初始化MJPEG流处理器
@@ -435,7 +442,7 @@ void ApiServer::registerApiRoutes() {
             MjpegStreamerConfig config;
             config.jpeg_quality = quality;
             config.max_fps = fps;
-            config.max_clients = 100;
+            config.max_clients = 2; // 限制最大客户端数量为2，确保系统稳定
             config.output_width = width;
             config.output_height = height;
 
@@ -449,9 +456,17 @@ void ApiServer::registerApiRoutes() {
                 return;
             }
 
+            // 获取摄像头ID
+            std::string camera_id = "";
+            auto it = request.query_params.find("camera_id");
+            if (it != request.query_params.end()) {
+                camera_id = it->second;
+            }
+
             // 添加客户端
             streamer.addClient(
                 client_id,
+                camera_id,
                 [send_data](const std::vector<uint8_t>& jpeg_data) {
                     // 构建MJPEG帧
                     std::string frame_header = "--frame\r\nContent-Type: image/jpeg\r\nContent-Length: " +
@@ -740,21 +755,40 @@ void ApiServer::registerApiRoutes() {
         return response;
     });
 
-    rest_handler_->registerRoute("GET", "/cameras.html", [this](const HttpRequest& request) -> HttpResponse {
+    rest_handler_->registerRoute("GET", "/camera_view.html", [this](const HttpRequest& request) -> HttpResponse {
         HttpResponse response;
         response.status_code = 200;
         response.status_message = "OK";
         response.content_type = "text/html";
 
         // 读取静态文件
-        std::string file_path = "/home/orangepi/Qworkspace/cam_server_cpp/static/cameras.html";
+        std::string file_path = "/home/orangepi/Qworkspace/cam_server_cpp/static/camera_view.html";
+        LOG_INFO("尝试读取文件: " + file_path, "ApiServer");
+        std::cerr << "[API] 尝试读取文件: " << file_path << std::endl;
+
+        // 检查文件是否存在
+        struct stat st;
+        if (stat(file_path.c_str(), &st) != 0) {
+            LOG_ERROR("文件不存在: " + file_path + ", 错误: " + std::string(strerror(errno)), "ApiServer");
+            std::cerr << "[API] 文件不存在: " << file_path << ", 错误: " << strerror(errno) << std::endl;
+        } else {
+            LOG_INFO("文件存在，大小: " + std::to_string(st.st_size) + " 字节", "ApiServer");
+            std::cerr << "[API] 文件存在，大小: " << st.st_size << " 字节" << std::endl;
+        }
+
         std::ifstream file(file_path);
         if (file.is_open()) {
+            LOG_INFO("文件打开成功: " + file_path, "ApiServer");
+            std::cerr << "[API] 文件打开成功: " << file_path << std::endl;
             std::stringstream buffer;
             buffer << file.rdbuf();
             response.body = buffer.str();
             file.close();
+            LOG_INFO("文件读取成功，大小: " + std::to_string(response.body.size()) + " 字节", "ApiServer");
+            std::cerr << "[API] 文件读取成功，大小: " << response.body.size() << " 字节" << std::endl;
         } else {
+            LOG_ERROR("无法打开文件: " + file_path + ", 错误: " + std::string(strerror(errno)), "ApiServer");
+            std::cerr << "[API] 无法打开文件: " << file_path << ", 错误: " << strerror(errno) << std::endl;
             response.status_code = 404;
             response.status_message = "Not Found";
             response.body = "<html><body><h1>404 Not Found</h1><p>The requested file was not found.</p></body></html>";
@@ -763,14 +797,15 @@ void ApiServer::registerApiRoutes() {
         return response;
     });
 
-    rest_handler_->registerRoute("GET", "/camera_select.html", [this](const HttpRequest& request) -> HttpResponse {
+    // 注册JavaScript文件路由
+    rest_handler_->registerRoute("GET", "/static/js/index.js", [this](const HttpRequest& request) -> HttpResponse {
         HttpResponse response;
         response.status_code = 200;
         response.status_message = "OK";
-        response.content_type = "text/html";
+        response.content_type = "application/javascript";
 
         // 读取静态文件
-        std::string file_path = "/home/orangepi/Qworkspace/cam_server_cpp/static/camera_select.html";
+        std::string file_path = "/home/orangepi/Qworkspace/cam_server_cpp/static/js/index.js";
         std::ifstream file(file_path);
         if (file.is_open()) {
             std::stringstream buffer;
@@ -780,20 +815,20 @@ void ApiServer::registerApiRoutes() {
         } else {
             response.status_code = 404;
             response.status_message = "Not Found";
-            response.body = "<html><body><h1>404 Not Found</h1><p>The requested file was not found.</p></body></html>";
+            response.body = "/* JavaScript file not found */";
         }
 
         return response;
     });
 
-    rest_handler_->registerRoute("GET", "/system_info.html", [this](const HttpRequest& request) -> HttpResponse {
+    rest_handler_->registerRoute("GET", "/static/js/camera_view.js", [this](const HttpRequest& request) -> HttpResponse {
         HttpResponse response;
         response.status_code = 200;
         response.status_message = "OK";
-        response.content_type = "text/html";
+        response.content_type = "application/javascript";
 
         // 读取静态文件
-        std::string file_path = "/home/orangepi/Qworkspace/cam_server_cpp/static/system_info.html";
+        std::string file_path = "/home/orangepi/Qworkspace/cam_server_cpp/static/js/camera_view.js";
         std::ifstream file(file_path);
         if (file.is_open()) {
             std::stringstream buffer;
@@ -803,7 +838,7 @@ void ApiServer::registerApiRoutes() {
         } else {
             response.status_code = 404;
             response.status_message = "Not Found";
-            response.body = "<html><body><h1>404 Not Found</h1><p>The requested file was not found.</p></body></html>";
+            response.body = "/* JavaScript file not found */";
         }
 
         return response;
@@ -848,7 +883,13 @@ void ApiServer::registerApiRoutes() {
 }
 
 // 生成唯一的客户端ID
-std::string ApiServer::generateClientId() {
+std::string ApiServer::generateClientId(const std::string& client_id_hint) {
+    // 如果提供了客户端ID提示，则使用它
+    if (!client_id_hint.empty()) {
+        return client_id_hint;
+    }
+
+    // 否则生成一个新的客户端ID
     static std::random_device rd;
     static std::mt19937 gen(rd());
     static std::uniform_int_distribution<> dis(0, 15);

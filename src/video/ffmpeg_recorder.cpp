@@ -1,5 +1,4 @@
-#include "video/video_recorder.h"
-#include "video/i_video_recorder.h"
+#include "video/ffmpeg_recorder.h"
 #include "utils/file_utils.h"
 #include "utils/string_utils.h"
 #include "monitor/logger.h"
@@ -20,74 +19,6 @@ namespace fs = std::filesystem;
 
 namespace cam_server {
 namespace video {
-
-class FFmpegRecorder : public IVideoRecorder {
-public:
-    FFmpegRecorder();
-    ~FFmpegRecorder() override;
-
-    bool initialize(const RecordingConfig& config) override;
-    bool startRecording() override;
-    bool stopRecording() override;
-    bool pauseRecording() override;
-    bool resumeRecording() override;
-    bool processFrame(const camera::Frame& frame) override;
-    RecordingStatus getStatus() const override;
-    void setStatusCallback(std::function<void(const RecordingStatus&)> callback) override;
-    bool setConfig(const RecordingConfig& config) override;
-    RecordingConfig getConfig() const override;
-
-private:
-    // 初始化FFmpeg
-    bool initFFmpeg();
-    // 清理FFmpeg资源
-    void cleanupFFmpeg();
-    // 创建输出格式上下文
-    bool createOutputFormatContext();
-    // 创建视频流
-    bool createVideoStream();
-    // 打开编码器
-    bool openEncoder();
-    // 写入文件头
-    bool writeHeader();
-    // 写入文件尾
-    bool writeTrailer();
-    // 编码并写入一帧
-    bool encodeAndWriteFrame(const camera::Frame& frame);
-    // 更新录制状态
-    void updateStatus();
-    // 检查是否需要分段
-    bool checkSegmentation();
-    // 创建新的分段文件
-    bool createNewSegment();
-    // 生成文件名
-    std::string generateFileName();
-
-    // 配置
-    RecordingConfig config_;
-    // 状态
-    RecordingStatus status_;
-    // 状态互斥锁
-    mutable std::mutex status_mutex_;
-    // 状态回调函数
-    std::function<void(const RecordingStatus&)> status_callback_;
-    // 是否已初始化
-    bool is_initialized_;
-    // 录制开始时间
-    int64_t start_time_;
-    // 上一帧时间戳
-    int64_t last_frame_timestamp_;
-    // 分段索引
-    int segment_index_;
-
-    // FFmpeg相关成员
-    AVFormatContext* format_context_;
-    AVCodecContext* codec_context_;
-    AVStream* video_stream_;
-    AVFrame* frame_;
-    AVPacket* packet_;
-    SwsContext* sws_context_;
-};
 
 FFmpegRecorder::FFmpegRecorder()
     : is_initialized_(false),

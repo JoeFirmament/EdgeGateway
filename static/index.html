@@ -3,401 +3,590 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>LuBan 边缘处理器 - 实时预览</title>
-    <link rel="stylesheet" href="css/style.css">
+    <title>LuBan 边缘处理器</title>
+    <style>
+        :root {
+            --primary-color: #2196F3;
+            --secondary-color: #4CAF50;
+            --danger-color: #f44336;
+            --dark-color: #333;
+            --light-color: #f5f5f5;
+            --border-color: #ddd;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--light-color);
+            color: var(--dark-color);
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        h1, h2, h3 {
+            color: var(--dark-color);
+            margin-bottom: 15px;
+        }
+
+        .tabs {
+            display: flex;
+            border-bottom: 1px solid var(--border-color);
+            margin-bottom: 20px;
+        }
+
+        .tab {
+            padding: 10px 20px;
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            font-weight: 500;
+            transition: all 0.3s;
+        }
+
+        .tab:hover {
+            background-color: rgba(33, 150, 243, 0.1);
+        }
+
+        .tab.active {
+            border-bottom: 2px solid var(--primary-color);
+            color: var(--primary-color);
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        .card {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+
+        .preview-section {
+            display: grid;
+            grid-template-columns: 3fr 1fr;
+            gap: 20px;
+        }
+
+        .preview-container {
+            position: relative;
+            width: 100%;
+            aspect-ratio: 16/9;
+            background-color: #f0f0f0;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .preview-img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            border-radius: 4px;
+        }
+
+        .preview-placeholder {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background-color: #f5f5f5;
+            border-radius: 4px;
+        }
+
+        .placeholder-content {
+            text-align: center;
+            color: #666;
+        }
+
+        .placeholder-icon {
+            font-size: 48px;
+            margin-bottom: 10px;
+        }
+
+        .placeholder-text {
+            font-size: 16px;
+        }
+
+        .camera-controls {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .control-group {
+            margin-bottom: 15px;
+        }
+
+        .button-group {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 15px;
+            flex-wrap: nowrap;
+        }
+
+        .button {
+            padding: 8px 10px;
+            border: none;
+            border-radius: 4px;
+            background-color: var(--primary-color);
+            color: white;
+            cursor: pointer;
+            font-size: 13px;
+            transition: background-color 0.3s, transform 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            white-space: nowrap;
+            text-align: center;
+        }
+
+        .button:hover {
+            background-color: #0b7dda;
+            transform: translateY(-2px);
+        }
+
+        .button:active {
+            transform: translateY(0);
+        }
+
+        .button.primary {
+            background-color: var(--primary-color);
+        }
+
+        .button.secondary {
+            background-color: var(--secondary-color);
+        }
+
+        .button.danger {
+            background-color: var(--danger-color);
+        }
+
+        .button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .form-group {
+            margin-bottom: 15px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 500;
+            font-size: 14px;
+        }
+
+        select, input {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            font-size: 14px;
+        }
+
+        .status {
+            margin-top: 15px;
+            padding: 10px;
+            border-radius: 4px;
+            background-color: #f9f9f9;
+            border-left: 4px solid var(--secondary-color);
+            display: none;
+        }
+
+        .status.error {
+            border-left-color: var(--danger-color);
+        }
+
+        .recording-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            background-color: var(--danger-color);
+            border-radius: 50%;
+            margin-right: 5px;
+            animation: blink 1s infinite;
+        }
+
+        @keyframes blink {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+
+        .camera-status {
+            margin-top: 15px;
+            padding: 10px;
+            background-color: #f9f9f9;
+            border-radius: 4px;
+            border-left: 4px solid var(--primary-color);
+        }
+
+        .status-item {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+
+        .status-label {
+            font-weight: 500;
+        }
+
+        .status-value {
+            color: var(--dark-color);
+        }
+
+        .status-value.connected {
+            color: var(--secondary-color);
+            font-weight: 500;
+        }
+
+        .status-value.disconnected {
+            color: var(--danger-color);
+        }
+
+        .system-info-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 20px;
+        }
+
+        .info-card {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            padding: 20px;
+        }
+
+        .info-card h3 {
+            margin-top: 0;
+            margin-bottom: 15px;
+            color: var(--primary-color);
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 10px;
+        }
+
+        .info-item {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 10px;
+            font-size: 14px;
+        }
+
+        .info-label {
+            font-weight: 500;
+        }
+
+        .info-value {
+            color: var(--dark-color);
+        }
+
+        .progress-bar {
+            height: 8px;
+            background-color: #e0e0e0;
+            border-radius: 4px;
+            margin-top: 5px;
+            overflow: hidden;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background-color: var(--primary-color);
+            border-radius: 4px;
+            width: 0%;
+            transition: width 0.5s;
+        }
+
+        .progress-fill.warning {
+            background-color: #FFC107;
+        }
+
+        .progress-fill.danger {
+            background-color: var(--danger-color);
+        }
+
+        iframe {
+            width: 100%;
+            height: 800px;
+            border: none;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        @media (max-width: 768px) {
+            .system-info-grid {
+                grid-template-columns: 1fr;
+            }
+
+            iframe {
+                height: 600px;
+            }
+        }
+    </style>
 </head>
 <body>
     <div class="container">
         <header>
             <h1>LuBan 边缘处理器</h1>
+            <div id="clock">00:00:00</div>
         </header>
 
-        <nav>
-            <ul>
-                <li><a href="index.html" class="active">实时预览</a></li>
-                <li><a href="cameras.html">设备管理</a></li>
-                <li><a href="camera_select.html">摄像头选择</a></li>
-                <li><a href="system_info.html">系统信息</a></li>
-            </ul>
-        </nav>
+        <div class="tabs">
+            <div class="tab active" data-tab="camera">摄像头</div>
+            <div class="tab" data-tab="system">系统信息</div>
+        </div>
 
-        <main>
+        <div id="cameraTab" class="tab-content active">
             <div class="card">
-                <h2>摄像头实时预览</h2>
+                <h2>摄像头预览</h2>
 
-                <div class="stream-container">
-                    <img id="stream" alt="摄像头实时预览" src="/api/stream">
-                    <div id="loading" class="loading hidden">正在加载视频流...</div>
-                    <div id="error-message" class="message error hidden">无法连接到摄像头流</div>
-                </div>
+                <div class="preview-section">
+                    <div>
+                        <div class="preview-container">
+                            <img id="preview" class="preview-img" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==" alt="摄像头预览">
+                            <div id="previewPlaceholder" class="preview-placeholder">
+                                <div class="placeholder-content">
+                                    <div class="placeholder-icon">📷</div>
+                                    <div class="placeholder-text">点击"开始预览"按钮查看摄像头画面</div>
+                                </div>
+                            </div>
+                            <div id="recordingStatus" style="display: none; position: absolute; top: 10px; right: 10px; background: rgba(0,0,0,0.5); color: white; padding: 5px 10px; border-radius: 4px;">
+                                <span class="recording-indicator"></span> 录制中: <span id="recordingTime">00:00</span>
+                            </div>
+                        </div>
 
-                <div class="card">
-                    <h3>流设置</h3>
-                    <div class="row">
-                        <div class="col">
+                        <div class="button-group" style="margin-top: 15px;">
+                            <button id="startPreviewBtn" class="button primary" style="flex: 1;">开始预览</button>
+                            <button id="stopPreviewBtn" class="button danger" style="flex: 1;" disabled>停止预览</button>
+                            <button id="captureBtn" class="button secondary" style="flex: 1;" disabled>拍照</button>
+                            <button id="startRecordingBtn" class="button secondary" style="flex: 1;" disabled>开始录制</button>
+                            <button id="stopRecordingBtn" class="button danger" style="flex: 1;" disabled>停止录制</button>
+                        </div>
+
+                        <div id="status" class="status"></div>
+                    </div>
+
+                    <div class="camera-controls">
+                        <div class="control-group">
                             <div class="form-group">
-                                <label for="resolution">分辨率:</label>
-                                <select id="resolution" class="form-control">
-                                    <option value="640x480">640x480</option>
-                                    <option value="800x600">800x600</option>
-                                    <option value="1280x720" selected>1280x720 (HD)</option>
-                                    <option value="1920x1080">1920x1080 (Full HD)</option>
+                                <label for="cameraSelect">选择摄像头:</label>
+                                <select id="cameraSelect">
+                                    <option value="">加载中...</option>
                                 </select>
                             </div>
-                        </div>
 
-                        <div class="col">
                             <div class="form-group">
-                                <label for="quality">质量 (1-100):</label>
-                                <input type="number" id="quality" class="form-control" min="1" max="100" value="80">
-                            </div>
-                        </div>
-
-                        <div class="col">
-                            <div class="form-group">
-                                <label for="fps">帧率:</label>
-                                <select id="fps" class="form-control">
-                                    <option value="5">5 FPS</option>
-                                    <option value="10">10 FPS</option>
-                                    <option value="15">15 FPS</option>
-                                    <option value="20">20 FPS</option>
-                                    <option value="25">25 FPS</option>
-                                    <option value="30" selected>30 FPS</option>
+                                <label for="resolutionSelect">分辨率:</label>
+                                <select id="resolutionSelect" disabled>
+                                    <option value="">请先选择摄像头</option>
                                 </select>
                             </div>
+
+                            <div class="form-group">
+                                <label for="fpsInput">帧率:</label>
+                                <input type="number" id="fpsInput" value="30" min="1" max="60">
+                            </div>
+
+                            <button id="applySettingsBtn" class="button primary" style="width: 100%;">应用设置</button>
+                        </div>
+
+                        <div class="camera-status">
+                            <h3>摄像头状态</h3>
+                            <div class="status-item">
+                                <span class="status-label">连接状态:</span>
+                                <span id="connectionStatus" class="status-value">未连接</span>
+                            </div>
+                            <div class="status-item">
+                                <span class="status-label">客户端ID:</span>
+                                <span id="clientId" class="status-value">--</span>
+                            </div>
+                            <div class="status-item">
+                                <span class="status-label">当前分辨率:</span>
+                                <span id="currentResolution" class="status-value">--</span>
+                            </div>
+                            <div class="status-item">
+                                <span class="status-label">当前帧率:</span>
+                                <span id="currentFps" class="status-value">--</span>
+                            </div>
                         </div>
                     </div>
-
-                    <div class="controls">
-                        <button id="apply" class="btn">应用设置</button>
-                        <button id="refresh" class="btn">刷新流</button>
-                        <button id="capture" class="btn btn-secondary">拍照</button>
-                        <button id="record" class="btn btn-secondary">开始录制</button>
-                    </div>
-                </div>
-
-                <div id="status" class="message success">
-                    已连接到摄像头流
-                </div>
-
-                <div class="card">
-                    <h3>摄像头信息</h3>
-                    <div id="camera-info" class="info-table">
-                        <table>
-                            <tr>
-                                <td>设备:</td>
-                                <td id="device-path">/dev/video0</td>
-                            </tr>
-                            <tr>
-                                <td>分辨率:</td>
-                                <td id="current-resolution">1280x720</td>
-                            </tr>
-                            <tr>
-                                <td>帧率:</td>
-                                <td id="current-fps">30 FPS</td>
-                            </tr>
-                            <tr>
-                                <td>状态:</td>
-                                <td id="camera-status"><span class="status-ok">正常</span></td>
-                            </tr>
-                        </table>
-                    </div>
-                </div>
-
-                <div class="info">
-                    <p>提示: 如果流无法显示，请检查摄像头是否已连接并正常工作。</p>
-                    <p>您可以调整分辨率、质量和帧率来优化性能和图像质量。</p>
                 </div>
             </div>
-        </main>
+        </div>
 
-        <footer>
-            <p>&copy; 2023 LuBan 边缘处理器 | 版本: 0.1.0</p>
-        </footer>
+        <div id="systemTab" class="tab-content">
+            <div class="system-info-grid">
+                <div class="info-card">
+                    <h3>系统概览</h3>
+                    <div class="info-item">
+                        <span class="info-label">主机名:</span>
+                        <span id="hostname" class="info-value">--</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">操作系统:</span>
+                        <span id="osVersion" class="info-value">--</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">内核版本:</span>
+                        <span id="kernelVersion" class="info-value">--</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">运行时间:</span>
+                        <span id="uptime" class="info-value">--</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">系统时间:</span>
+                        <span id="systemTime" class="info-value">--</span>
+                    </div>
+                </div>
+
+                <div class="info-card">
+                    <h3>CPU信息</h3>
+                    <div class="info-item">
+                        <span class="info-label">处理器:</span>
+                        <span id="cpuInfo" class="info-value">--</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">CPU使用率:</span>
+                        <span id="cpuUsage" class="info-value">--</span>
+                    </div>
+                    <div class="progress-bar">
+                        <div id="cpuUsageBar" class="progress-fill"></div>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">CPU温度:</span>
+                        <span id="cpuTemp" class="info-value">--</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">CPU频率:</span>
+                        <span id="cpuFreq" class="info-value">--</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">系统负载:</span>
+                        <span id="loadAverage" class="info-value">--</span>
+                    </div>
+                </div>
+
+                <div class="info-card">
+                    <h3>GPU信息</h3>
+                    <div class="info-item">
+                        <span class="info-label">GPU使用率:</span>
+                        <span id="gpuUsage" class="info-value">--</span>
+                    </div>
+                    <div class="progress-bar">
+                        <div id="gpuUsageBar" class="progress-fill"></div>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">GPU温度:</span>
+                        <span id="gpuTemp" class="info-value">--</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">GPU内存使用率:</span>
+                        <span id="gpuMemUsage" class="info-value">--</span>
+                    </div>
+                    <div class="progress-bar">
+                        <div id="gpuMemUsageBar" class="progress-fill"></div>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">GPU频率:</span>
+                        <span id="gpuFreq" class="info-value">--</span>
+                    </div>
+                </div>
+
+                <div class="info-card">
+                    <h3>内存信息</h3>
+                    <div class="info-item">
+                        <span class="info-label">总内存:</span>
+                        <span id="memTotal" class="info-value">--</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">已用内存:</span>
+                        <span id="memUsed" class="info-value">--</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">可用内存:</span>
+                        <span id="memFree" class="info-value">--</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">内存使用率:</span>
+                        <span id="memUsage" class="info-value">--</span>
+                    </div>
+                    <div class="progress-bar">
+                        <div id="memUsageBar" class="progress-fill"></div>
+                    </div>
+                </div>
+
+                <div class="info-card">
+                    <h3>存储信息</h3>
+                    <div class="info-item">
+                        <span class="info-label">总空间:</span>
+                        <span id="diskTotal" class="info-value">--</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">已用空间:</span>
+                        <span id="diskUsed" class="info-value">--</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">可用空间:</span>
+                        <span id="diskFree" class="info-value">--</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">存储使用率:</span>
+                        <span id="diskUsage" class="info-value">--</span>
+                    </div>
+                    <div class="progress-bar">
+                        <div id="diskUsageBar" class="progress-fill"></div>
+                    </div>
+                </div>
+
+                <div class="info-card">
+                    <h3>网络信息</h3>
+                    <div class="info-item">
+                        <span class="info-label">IP地址:</span>
+                        <span id="ipAddress" class="info-value">--</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">WiFi SSID:</span>
+                        <span id="wifiSsid" class="info-value">--</span>
+                    </div>
+                    <div id="networkInterfaces">
+                        <!-- 网络接口信息将在这里动态添加 -->
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 
-    <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            // DOM元素
-            const streamImg = document.getElementById('stream');
-            const loadingDiv = document.getElementById('loading');
-            const errorMessageDiv = document.getElementById('error-message');
-            const resolutionSelect = document.getElementById('resolution');
-            const qualityInput = document.getElementById('quality');
-            const fpsSelect = document.getElementById('fps');
-            const applyButton = document.getElementById('apply');
-            const refreshButton = document.getElementById('refresh');
-            const captureButton = document.getElementById('capture');
-            const recordButton = document.getElementById('record');
-            const statusDiv = document.getElementById('status');
-            const devicePathElement = document.getElementById('device-path');
-            const currentResolutionElement = document.getElementById('current-resolution');
-            const currentFpsElement = document.getElementById('current-fps');
-            const cameraStatusElement = document.getElementById('camera-status');
-
-            // 状态变量
-            let isRecording = false;
-            let recordingStartTime = null;
-
-            // 初始化
-            loadCameraInfo();
-
-            // 应用设置
-            function applySettings() {
-                showLoading();
-
-                const [width, height] = resolutionSelect.value.split('x');
-                const quality = qualityInput.value;
-                const fps = fpsSelect.value;
-
-                const streamUrl = `/api/stream?width=${width}&height=${height}&quality=${quality}&fps=${fps}&t=${Date.now()}`;
-                streamImg.src = streamUrl;
-
-                // 更新摄像头信息
-                currentResolutionElement.textContent = `${width}x${height}`;
-                currentFpsElement.textContent = `${fps} FPS`;
-
-                // 显示消息
-                showMessage(`已应用新设置: 分辨率=${width}x${height}, 质量=${quality}, 帧率=${fps}`, 'success');
-
-                console.log(`应用新设置: 分辨率=${width}x${height}, 质量=${quality}, 帧率=${fps}`);
-            }
-
-            // 刷新流
-            function refreshStream() {
-                showLoading();
-
-                const [width, height] = resolutionSelect.value.split('x');
-                const quality = qualityInput.value;
-                const fps = fpsSelect.value;
-
-                // 添加时间戳避免缓存
-                const streamUrl = `/api/stream?width=${width}&height=${height}&quality=${quality}&fps=${fps}&t=${Date.now()}`;
-                streamImg.src = streamUrl;
-
-                showMessage('视频流已刷新', 'info');
-            }
-
-            // 拍照
-            function captureImage() {
-                if (!streamImg.complete || streamImg.naturalWidth === 0) {
-                    showMessage('无法拍照：摄像头未连接', 'error');
-                    return;
-                }
-
-                // 创建canvas元素
-                const canvas = document.createElement('canvas');
-                canvas.width = streamImg.naturalWidth;
-                canvas.height = streamImg.naturalHeight;
-
-                // 绘制当前帧
-                const ctx = canvas.getContext('2d');
-                ctx.drawImage(streamImg, 0, 0);
-
-                try {
-                    // 转换为图片并下载
-                    const dataUrl = canvas.toDataURL('image/jpeg', qualityInput.value / 100);
-                    const link = document.createElement('a');
-                    link.href = dataUrl;
-                    link.download = `capture_${new Date().toISOString().replace(/:/g, '-')}.jpg`;
-                    link.click();
-
-                    showMessage('图片已保存', 'success');
-                } catch (error) {
-                    console.error('拍照失败:', error);
-                    showMessage('拍照失败: ' + error.message, 'error');
-                }
-            }
-
-            // 录制视频
-            function toggleRecording() {
-                if (isRecording) {
-                    // 停止录制
-                    stopRecording();
-                } else {
-                    // 开始录制
-                    startRecording();
-                }
-            }
-
-            // 开始录制
-            function startRecording() {
-                fetch('/api/cameras/start_recording', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        format: 'mp4',
-                        duration: 0 // 0表示无限制，直到手动停止
-                    })
-                })
-                .then(response => {
-                    if (!response.ok) {
-                        throw new Error('开始录制请求失败');
-                    }
-                    return response.json();
-                })
-                .then(data => {
-                    if (data.success) {
-                        isRecording = true;
-                        recordingStartTime = Date.now();
-                        recordButton.textContent = '停止录制';
-                        recordButton.classList.add('btn-danger');
-
-                        // 开始更新录制时间
-                        updateRecordingTime();
-
-                        showMessage('录制已开始', 'success');
-                    } else {
-                        showMessage(data.error || '开始录制失败', 'error');
-                    }
-                })
-                .catch(error => {
-                    console.error('Error:', error);
-                    showMessage('开始录制失败: ' + error.message, 'error');
-                });
-            }
-
-            // 停止录制
-            function stopRecording() {
-                fetch('/api/cameras/stop_recording', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    }
-                })
-                .then(response => {
-                    if (!response.ok) {
-                        throw new Error('停止录制请求失败');
-                    }
-                    return response.json();
-                })
-                .then(data => {
-                    if (data.success) {
-                        isRecording = false;
-                        recordButton.textContent = '开始录制';
-                        recordButton.classList.remove('btn-danger');
-
-                        showMessage(`录制已停止，视频已保存: ${data.file_path || '未知路径'}`, 'success');
-                    } else {
-                        showMessage(data.error || '停止录制失败', 'error');
-                    }
-                })
-                .catch(error => {
-                    console.error('Error:', error);
-                    showMessage('停止录制失败: ' + error.message, 'error');
-                });
-            }
-
-            // 更新录制时间
-            function updateRecordingTime() {
-                if (!isRecording) return;
-
-                const elapsedTime = Math.floor((Date.now() - recordingStartTime) / 1000);
-                const hours = Math.floor(elapsedTime / 3600);
-                const minutes = Math.floor((elapsedTime % 3600) / 60);
-                const seconds = elapsedTime % 60;
-
-                const timeStr = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-                recordButton.textContent = `停止录制 (${timeStr})`;
-
-                setTimeout(updateRecordingTime, 1000);
-            }
-
-            // 加载摄像头信息
-            function loadCameraInfo() {
-                fetch('/camCapture')
-                    .then(response => {
-                        if (!response.ok) {
-                            throw new Error('获取摄像头信息失败');
-                        }
-                        return response.json();
-                    })
-                    .then(data => {
-                        // 更新摄像头信息
-                        devicePathElement.textContent = data.device;
-                        currentResolutionElement.textContent = data.resolution;
-                        currentFpsElement.textContent = `${data.fps} FPS`;
-
-                        // 更新摄像头状态
-                        if (data.is_capturing) {
-                            cameraStatusElement.innerHTML = '<span class="status-ok">正在捕获</span>';
-                        } else {
-                            cameraStatusElement.innerHTML = '<span class="status-warning">未捕获</span>';
-                        }
-                    })
-                    .catch(error => {
-                        console.error('Error:', error);
-                        cameraStatusElement.innerHTML = '<span class="status-error">错误</span>';
-                    });
-            }
-
-            // 检查流状态
-            function checkStreamStatus() {
-                if (streamImg.complete && streamImg.naturalWidth > 0) {
-                    // 流已连接
-                    streamImg.style.display = 'block';
-                    loadingDiv.classList.add('hidden');
-                    errorMessageDiv.classList.add('hidden');
-                    statusDiv.className = 'message success';
-                    statusDiv.textContent = '已连接到摄像头流';
-                    cameraStatusElement.innerHTML = '<span class="status-ok">正常</span>';
-                } else {
-                    // 流未连接
-                    streamImg.style.display = 'none';
-                    loadingDiv.classList.add('hidden');
-                    errorMessageDiv.classList.remove('hidden');
-                    statusDiv.className = 'message error';
-                    statusDiv.textContent = '无法连接到摄像头流';
-                    cameraStatusElement.innerHTML = '<span class="status-error">错误</span>';
-                }
-            }
-
-            // 显示加载中
-            function showLoading() {
-                streamImg.style.display = 'none';
-                loadingDiv.classList.remove('hidden');
-                errorMessageDiv.classList.add('hidden');
-            }
-
-            // 显示消息
-            function showMessage(message, type) {
-                statusDiv.textContent = message;
-                statusDiv.className = `message ${type}`;
-
-                // 5秒后恢复原状态
-                setTimeout(() => {
-                    checkStreamStatus();
-                }, 5000);
-            }
-
-            // 事件监听器
-            applyButton.addEventListener('click', applySettings);
-            refreshButton.addEventListener('click', refreshStream);
-            captureButton.addEventListener('click', captureImage);
-            recordButton.addEventListener('click', toggleRecording);
-
-            // 图像加载事件
-            streamImg.addEventListener('load', () => {
-                loadingDiv.classList.add('hidden');
-                streamImg.style.display = 'block';
-                checkStreamStatus();
-            });
-
-            streamImg.addEventListener('error', () => {
-                loadingDiv.classList.add('hidden');
-                errorMessageDiv.classList.remove('hidden');
-                streamImg.style.display = 'none';
-                checkStreamStatus();
-            });
-
-            // 初始检查
-            setTimeout(checkStreamStatus, 1000);
-
-            // 定期刷新摄像头信息
-            setInterval(loadCameraInfo, 5000);
-        });
-    </script>
+    <script src="/static/js/index.js"></script>
 </body>
 </html>

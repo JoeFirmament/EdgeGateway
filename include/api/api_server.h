@@ -149,7 +149,7 @@ private:
     // 注册系统控制API路由
     void registerSystemControlRoutes();
     // 生成客户端ID
-    std::string generateClientId();
+    std::string generateClientId(const std::string& client_id_hint = "");
 
     // 服务器配置
     ApiServerConfig config_;

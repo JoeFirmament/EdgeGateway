@@ -38,6 +38,7 @@ target_compile_definitions(api_module PRIVATE
 target_link_libraries(api_module
     utils_module
     camera_module
+    video_module
     ${FFMPEG_LIBRARIES}
     pthread
     dl

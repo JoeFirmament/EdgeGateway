@@ -17,9 +17,9 @@ add_executable(cam_server ${MAIN_SOURCES})
 
 # 链接库
 target_link_libraries(cam_server
+    api_module
     camera_module
     video_module
-    api_module
     storage_module
     monitor_module
     utils_module

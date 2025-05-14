@@ -205,7 +205,7 @@ bool CameraManager::closeDevice() {
         });
 
         // 等待停止捕获操作完成或超时
-        const int timeout_seconds = 3;
+        const int timeout_seconds = 5; // 增加超时时间到5秒
         std::cerr << "[CAMERA][camera_manager.cpp:closeDevice] 等待停止捕获操作完成，超时时间: " << timeout_seconds << "秒..." << std::endl;
         std::cerr.flush();
 
@@ -259,7 +259,7 @@ bool CameraManager::closeDevice() {
         });
 
         // 等待关闭设备操作完成或超时
-        const int timeout_seconds = 3;
+        const int timeout_seconds = 5; // 增加超时时间到5秒
         std::cerr << "[CAMERA][camera_manager.cpp:closeDevice] 等待关闭设备操作完成，超时时间: " << timeout_seconds << "秒..." << std::endl;
         std::cerr.flush();
 

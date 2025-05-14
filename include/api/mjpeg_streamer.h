@@ -10,6 +10,8 @@
 #include <functional>
 #include <queue>
 #include <condition_variable>
+#include <unordered_map>
+#include <unordered_set>
 
 #include "camera/camera_device.h"
 
@@ -38,6 +40,8 @@ struct MjpegStreamerConfig {
 struct MjpegClient {
     // 客户端ID
     std::string id;
+    // 摄像头ID
+    std::string camera_id;
     // 帧回调函数
     std::function<void(const std::vector<uint8_t>&)> frame_callback;
     // 错误回调函数
@@ -46,6 +50,8 @@ struct MjpegClient {
     std::function<void()> close_callback;
     // 上次发送帧的时间戳
     int64_t last_frame_time;
+    // 上次活动时间戳
+    int64_t last_activity_time;
 };
 
 /**
@@ -81,12 +87,14 @@ public:
     /**
      * @brief 添加客户端
      * @param client_id 客户端ID
+     * @param camera_id 摄像头ID
      * @param frame_callback 帧回调函数
      * @param error_callback 错误回调函数
      * @param close_callback 关闭回调函数
      * @return 是否成功添加
      */
     bool addClient(const std::string& client_id,
+                  const std::string& camera_id,
                   std::function<void(const std::vector<uint8_t>&)> frame_callback,
                   std::function<void(const std::string&)> error_callback,
                   std::function<void()> close_callback);
@@ -134,6 +142,8 @@ private:
     std::atomic<bool> is_running_;
     // 客户端列表
     std::unordered_map<std::string, std::shared_ptr<MjpegClient>> clients_;
+    // 摄像头客户端映射（摄像头ID -> 客户端ID集合）
+    std::unordered_map<std::string, std::unordered_set<std::string>> camera_clients_;
     // 客户端互斥锁
     mutable std::mutex clients_mutex_;
     // 当前帧率

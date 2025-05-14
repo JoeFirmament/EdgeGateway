@@ -51,9 +51,11 @@ bool MjpegStreamer::initialize(const MjpegStreamerConfig& config) {
         std::cerr << "[MJPEG][mjpeg_streamer.cpp:initialize] 设置默认最大帧率: 30" << std::endl;
         config_.max_fps = 30;
     }
-    if (config_.max_clients <= 0) {
-        std::cerr << "[MJPEG][mjpeg_streamer.cpp:initialize] 设置默认最大客户端数: 10" << std::endl;
-        config_.max_clients = 10;
+    // 强制限制最大客户端数量为2，确保系统稳定
+    if (config_.max_clients <= 0 || config_.max_clients > 2) {
+        std::cerr << "[MJPEG][mjpeg_streamer.cpp:initialize] 设置默认最大客户端数: 2" << std::endl;
+        LOG_INFO("限制最大客户端数为2，以确保系统稳定性", "MjpegStreamer");
+        config_.max_clients = 2;
     }
 
     is_initialized_ = true;
@@ -118,6 +120,7 @@ bool MjpegStreamer::stop() {
 }
 
 bool MjpegStreamer::addClient(const std::string& client_id,
+                             const std::string& camera_id,
                              std::function<void(const std::vector<uint8_t>&)> frame_callback,
                              std::function<void(const std::string&)> error_callback,
                              std::function<void()> close_callback) {
@@ -130,22 +133,88 @@ bool MjpegStreamer::addClient(const std::string& client_id,
 
     // 检查客户端数量是否已达上限
     if (clients_.size() >= config_.max_clients) {
-        LOG_ERROR("客户端数量已达上限", "MjpegStreamer");
+        LOG_ERROR("客户端数量已达上限: " + std::to_string(clients_.size()) +
+                 "/" + std::to_string(config_.max_clients) +
+                 "，拒绝新客户端: " + client_id, "MjpegStreamer");
+
+        // 如果有错误回调，通知客户端
+        if (error_callback) {
+            error_callback("服务器已达到最大连接数限制，请稍后再试");
+        }
+
         return false;
+    }
+
+    // 检查摄像头是否已有客户端连接
+    if (!camera_id.empty() && camera_clients_.find(camera_id) != camera_clients_.end() &&
+        !camera_clients_[camera_id].empty()) {
+        // 每个摄像头只允许一个客户端连接
+        LOG_WARNING("摄像头 " + camera_id + " 已有客户端连接，拒绝新客户端: " + client_id, "MjpegStreamer");
+
+        // 如果有错误回调，通知客户端
+        if (error_callback) {
+            error_callback("该摄像头已被其他用户使用，请选择其他摄像头或稍后再试");
+        }
+
+        return false;
+    }
+
+    // 检查客户端ID是否已存在
+    if (clients_.find(client_id) != clients_.end()) {
+        LOG_WARNING("客户端ID已存在，将替换现有客户端: " + client_id, "MjpegStreamer");
+
+        // 调用现有客户端的关闭回调
+        if (clients_[client_id]->close_callback) {
+            clients_[client_id]->close_callback();
+        }
+
+        // 从摄像头客户端映射中移除
+        std::string old_camera_id = clients_[client_id]->camera_id;
+        if (!old_camera_id.empty() && camera_clients_.find(old_camera_id) != camera_clients_.end()) {
+            camera_clients_[old_camera_id].erase(client_id);
+            LOG_INFO("将客户端 " + client_id + " 从摄像头 " + old_camera_id + " 解除关联", "MjpegStreamer");
+
+            // 如果摄像头没有关联的客户端，从映射中移除
+            if (camera_clients_[old_camera_id].empty()) {
+                camera_clients_.erase(old_camera_id);
+                LOG_INFO("摄像头 " + old_camera_id + " 没有关联的客户端，从映射中移除", "MjpegStreamer");
+            }
+        }
+
+        // 从客户端列表中移除
+        clients_.erase(client_id);
     }
 
     // 创建新客户端
     auto client = std::make_shared<MjpegClient>();
     client->id = client_id;
+    client->camera_id = camera_id;
     client->frame_callback = frame_callback;
     client->error_callback = error_callback;
     client->close_callback = close_callback;
     client->last_frame_time = utils::TimeUtils::getCurrentTimeMicros();
+    client->last_activity_time = utils::TimeUtils::getCurrentTimeMicros();
 
     // 添加到客户端列表
     clients_[client_id] = client;
 
-    LOG_INFO("添加MJPEG客户端: " + client_id, "MjpegStreamer");
+    // 添加到摄像头客户端映射
+    if (!camera_id.empty()) {
+        camera_clients_[camera_id].insert(client_id);
+        LOG_INFO("将客户端 " + client_id + " 关联到摄像头 " + camera_id, "MjpegStreamer");
+    }
+
+    LOG_INFO("添加MJPEG客户端: " + client_id +
+             "，当前客户端数量: " + std::to_string(clients_.size()) +
+             "/" + std::to_string(config_.max_clients), "MjpegStreamer");
+
+    // 输出当前所有客户端ID，便于调试
+    std::string client_list = "当前客户端列表: ";
+    for (const auto& pair : clients_) {
+        client_list += pair.first + ", ";
+    }
+    LOG_DEBUG(client_list, "MjpegStreamer");
+
     return true;
 }
 
@@ -162,10 +231,25 @@ bool MjpegStreamer::removeClient(const std::string& client_id) {
         it->second->close_callback();
     }
 
+    // 从摄像头客户端映射中移除
+    std::string camera_id = it->second->camera_id;
+    if (!camera_id.empty() && camera_clients_.find(camera_id) != camera_clients_.end()) {
+        camera_clients_[camera_id].erase(client_id);
+        LOG_INFO("将客户端 " + client_id + " 从摄像头 " + camera_id + " 解除关联", "MjpegStreamer");
+
+        // 如果摄像头没有关联的客户端，从映射中移除
+        if (camera_clients_[camera_id].empty()) {
+            camera_clients_.erase(camera_id);
+            LOG_INFO("摄像头 " + camera_id + " 没有关联的客户端，从映射中移除", "MjpegStreamer");
+        }
+    }
+
     // 从客户端列表中移除
     clients_.erase(it);
 
-    LOG_INFO("移除MJPEG客户端: " + client_id, "MjpegStreamer");
+    LOG_INFO("移除MJPEG客户端: " + client_id +
+             "，当前客户端数量: " + std::to_string(clients_.size()) +
+             "/" + std::to_string(config_.max_clients), "MjpegStreamer");
     return true;
 }
 
@@ -224,6 +308,8 @@ void MjpegStreamer::handleFrame(const camera::Frame& frame) {
     // 每秒输出一次客户端数量信息
     if (elapsed >= 1000) {
         std::cerr << "[MJPEG][mjpeg_streamer.cpp:handleFrame] 当前客户端数量: " << clients_.size() << std::endl;
+
+        // 不再自动清理不活跃的客户端，完全依靠页面的逻辑来控制
     }
 
     for (auto it = clients_.begin(); it != clients_.end();) {
@@ -239,6 +325,7 @@ void MjpegStreamer::handleFrame(const camera::Frame& frame) {
                 // 发送帧
                 client->frame_callback(jpeg_data);
                 client->last_frame_time = now_micros;
+                client->last_activity_time = now_micros; // 更新活跃时间
                 ++it;
             } catch (const std::exception& e) {
                 // 发送失败，移除客户端

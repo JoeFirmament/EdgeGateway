@@ -379,14 +379,6 @@ int main(int argc, char* argv[]) {
         LOG_INFO("摄像头服务器启动中...", "Main");
         LOG_INFO("正在初始化配置管理器...", "Main");
 
-        // 添加一个延迟，以便我们可以看到更多的调试输出
-        LOG_INFO("等待5秒钟...", "Main");
-        for (int i = 5; i > 0; --i) {
-            LOG_INFO(std::to_string(i) + "...", "Main");
-            std::this_thread::sleep_for(std::chrono::seconds(1));
-        }
-        LOG_INFO("开始初始化配置管理器", "Main");
-
         // 初始化配置管理器
         if (!initialize_config(config_path)) {
             LOG_ERROR("初始化配置管理器失败", "Main");

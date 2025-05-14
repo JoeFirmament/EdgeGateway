@@ -2,6 +2,7 @@
 set(VIDEO_SOURCES
     ffmpeg_recorder.cpp
     ffmpeg_splitter.cpp
+    video_recorder_factory.cpp
 )
 
 # 创建库
