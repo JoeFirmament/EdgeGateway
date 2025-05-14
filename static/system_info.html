@@ -3,15 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>RK3588摄像头服务器 - 系统信息</title>
+    <title>LuBan 边缘处理器 - 系统信息</title>
     <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
     <div class="container">
         <header>
-            <h1>RK3588摄像头服务器</h1>
+            <h1>LuBan 边缘处理器</h1>
         </header>
-        
+
         <nav>
             <ul>
                 <li><a href="index.html">实时预览</a></li>
@@ -20,14 +20,14 @@
                 <li><a href="system_info.html" class="active">系统信息</a></li>
             </ul>
         </nav>
-        
+
         <main>
             <div class="card">
                 <h2>系统信息</h2>
-                
+
                 <div id="loading" class="loading">正在加载系统信息...</div>
                 <div id="error-message" class="message error hidden">无法加载系统信息</div>
-                
+
                 <div id="system-info" class="hidden">
                     <div class="card">
                         <h3>基本信息</h3>
@@ -50,7 +50,7 @@
                             </tr>
                         </table>
                     </div>
-                    
+
                     <div class="card">
                         <h3>资源使用情况</h3>
                         <div class="row">
@@ -60,7 +60,7 @@
                                     <div id="cpu-usage-bar" class="progress-bar progress-bar-primary" style="width: 0%;">0%</div>
                                 </div>
                             </div>
-                            
+
                             <div class="col">
                                 <h4>内存使用率</h4>
                                 <div class="progress">
@@ -83,7 +83,7 @@
                             </div>
                         </div>
                     </div>
-                    
+
                     <div class="card">
                         <h3>存储信息</h3>
                         <div class="storage-card">
@@ -107,7 +107,7 @@
                             </div>
                         </div>
                     </div>
-                    
+
                     <div class="card">
                         <h3>服务器状态</h3>
                         <table class="info-table">
@@ -128,25 +128,25 @@
                 </div>
             </div>
         </main>
-        
+
         <footer>
-            <p>&copy; 2023 RK3588摄像头服务器 | 版本: 0.1.0</p>
+            <p>&copy; 2023 LuBan 边缘处理器 | 版本: 0.1.0</p>
         </footer>
     </div>
-    
+
     <script>
         document.addEventListener('DOMContentLoaded', function() {
             // DOM元素
             const loadingDiv = document.getElementById('loading');
             const errorMessageDiv = document.getElementById('error-message');
             const systemInfoDiv = document.getElementById('system-info');
-            
+
             // 加载系统信息
             loadSystemInfo();
-            
+
             // 定期刷新系统信息
             setInterval(loadSystemInfo, 5000);
-            
+
             // 加载系统信息
             function loadSystemInfo() {
                 fetch('/systeminfo')
@@ -161,28 +161,28 @@
                         loadingDiv.classList.add('hidden');
                         errorMessageDiv.classList.add('hidden');
                         systemInfoDiv.classList.remove('hidden');
-                        
+
                         // 更新基本信息
                         document.getElementById('hostname').textContent = data.hostname || '-';
                         document.getElementById('kernel-version').textContent = data.kernel_version || '-';
                         document.getElementById('cpu-info').textContent = data.cpu_info || 'RK3588';
-                        
+
                         // 更新内存信息
                         document.getElementById('memory-total').textContent = data.memory_total || '-';
-                        
+
                         // 更新磁盘信息
                         document.getElementById('disk-total').textContent = data.disk_total || '-';
-                        
+
                         // 更新服务器信息
                         document.getElementById('server-version').textContent = data.server_version || '-';
-                        
+
                         // 计算服务器运行时间
                         const uptime = parseInt(data.server_uptime);
                         const hours = Math.floor(uptime / (1000 * 60 * 60));
                         const minutes = Math.floor((uptime % (1000 * 60 * 60)) / (1000 * 60));
                         const seconds = Math.floor((uptime % (1000 * 60)) / 1000);
                         document.getElementById('server-uptime').textContent = `${hours}小时 ${minutes}分钟 ${seconds}秒`;
-                        
+
                         // 模拟CPU和内存使用率（实际应该从API获取）
                         simulateResourceUsage();
                     })
@@ -193,7 +193,7 @@
                         systemInfoDiv.classList.add('hidden');
                     });
             }
-            
+
             // 模拟资源使用情况（实际应该从API获取）
             function simulateResourceUsage() {
                 // 模拟CPU使用率
@@ -201,7 +201,7 @@
                 const cpuUsageBar = document.getElementById('cpu-usage-bar');
                 cpuUsageBar.style.width = `${cpuUsage}%`;
                 cpuUsageBar.textContent = `${cpuUsage}%`;
-                
+
                 // 根据使用率设置颜色
                 if (cpuUsage < 50) {
                     cpuUsageBar.className = 'progress-bar progress-bar-success';
@@ -210,13 +210,13 @@
                 } else {
                     cpuUsageBar.className = 'progress-bar progress-bar-danger';
                 }
-                
+
                 // 模拟内存使用率
                 const memoryUsage = Math.floor(Math.random() * 100);
                 const memoryUsageBar = document.getElementById('memory-usage-bar');
                 memoryUsageBar.style.width = `${memoryUsage}%`;
                 memoryUsageBar.textContent = `${memoryUsage}%`;
-                
+
                 // 根据使用率设置颜色
                 if (memoryUsage < 50) {
                     memoryUsageBar.className = 'progress-bar progress-bar-success';
@@ -225,22 +225,22 @@
                 } else {
                     memoryUsageBar.className = 'progress-bar progress-bar-danger';
                 }
-                
+
                 // 模拟内存详情
                 const memoryTotal = '7.7Gi';
                 const memoryUsed = `${(7.7 * memoryUsage / 100).toFixed(1)}Gi`;
                 const memoryFree = `${(7.7 - 7.7 * memoryUsage / 100).toFixed(1)}Gi`;
-                
+
                 document.getElementById('memory-total').textContent = memoryTotal;
                 document.getElementById('memory-used').textContent = memoryUsed;
                 document.getElementById('memory-free').textContent = memoryFree;
-                
+
                 // 模拟磁盘使用率
                 const diskUsage = Math.floor(Math.random() * 100);
                 const diskUsageBar = document.getElementById('disk-usage-bar');
                 diskUsageBar.style.width = `${diskUsage}%`;
                 diskUsageBar.textContent = `${diskUsage}%`;
-                
+
                 // 根据使用率设置颜色
                 if (diskUsage < 50) {
                     diskUsageBar.className = 'progress-bar progress-bar-success';
@@ -249,12 +249,12 @@
                 } else {
                     diskUsageBar.className = 'progress-bar progress-bar-danger';
                 }
-                
+
                 // 模拟磁盘详情
                 const diskTotal = '57G';
                 const diskUsed = `${(57 * diskUsage / 100).toFixed(1)}G`;
                 const diskFree = `${(57 - 57 * diskUsage / 100).toFixed(1)}G`;
-                
+
                 document.getElementById('disk-total').textContent = diskTotal;
                 document.getElementById('disk-used').textContent = diskUsed;
                 document.getElementById('disk-free').textContent = diskFree;
