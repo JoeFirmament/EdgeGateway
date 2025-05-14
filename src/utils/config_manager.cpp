@@ -1,10 +1,20 @@
 #include "utils/config_manager.h"
 #include "utils/file_utils.h"
 #include "utils/string_utils.h"
+#include "monitor/logger.h"
 #include <fstream>
 #include <iostream>
 #include <sstream>
 #include <regex>
+#include <cstring>       // 为 strerror 函数
+#include <cerrno>        // 为 errno 变量
+#include <any>           // 为 std::any 类型
+#include <mutex>         // 为 std::mutex 和 std::lock_guard
+#include <vector>        // 为 std::vector
+#include <string>        // 为 std::string
+#include <unordered_map> // 为 std::unordered_map
+#include <functional>    // 为 std::function
+#include <typeinfo>      // 为 typeid
 
 namespace cam_server {
 namespace utils {
@@ -21,150 +31,422 @@ ConfigManager::ConfigManager() : is_initialized_(false) {
 
 // 初始化配置管理器
 bool ConfigManager::initialize(const std::string& config_file) {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::cerr << "========== ConfigManager::initialize 开始 ==========" << std::endl;
+    std::cerr << "配置文件路径: " << config_file << std::endl;
 
-    config_file_ = config_file;
+    // 在这里不获取互斥锁，而是在内部实现中获取
+    // 这样可以避免死锁问题
 
-    // 加载配置文件
-    bool result = loadConfig(config_file);
+    // 设置配置文件路径并加载配置
+    std::cerr << "正在调用内部初始化方法..." << std::endl;
+    bool result = initializeInternal(config_file);
+    std::cerr << "内部初始化方法返回结果: " << (result ? "成功" : "失败") << std::endl;
 
-    is_initialized_ = result;
+    std::cerr << "========== ConfigManager::initialize " << (result ? "成功" : "失败") << " ==========" << std::endl;
     return result;
 }
 
-// 加载配置
-bool ConfigManager::loadConfig(const std::string& config_file) {
+// 内部初始化方法，实际执行初始化逻辑
+bool ConfigManager::initializeInternal(const std::string& config_file) {
     std::lock_guard<std::mutex> lock(mutex_);
+    std::cerr << "获取互斥锁成功" << std::endl;
+
+    config_file_ = config_file;
+    std::cerr << "已设置配置文件路径: " << config_file_ << std::endl;
+
+    // 加载配置文件，但不再获取锁
+    std::cerr << "正在加载配置文件..." << std::endl;
+    bool result = loadConfigInternal(config_file);
+    std::cerr << "配置文件加载结果: " << (result ? "成功" : "失败") << std::endl;
+
+    is_initialized_ = result;
+    std::cerr << "已设置初始化状态: " << (is_initialized_ ? "已初始化" : "未初始化") << std::endl;
+
+    return result;
+}
+
+// 加载配置 - 公共方法，获取互斥锁
+bool ConfigManager::loadConfig(const std::string& config_file) {
+    std::cerr << "========== ConfigManager::loadConfig 开始 ==========" << std::endl;
+    std::cerr << "传入的配置文件路径: " << config_file << std::endl;
+
+    // 获取互斥锁
+    std::lock_guard<std::mutex> lock(mutex_);
+    std::cerr << "获取互斥锁成功" << std::endl;
+
+    // 调用内部方法加载配置
+    bool result = loadConfigInternal(config_file);
+
+    std::cerr << "========== ConfigManager::loadConfig " << (result ? "成功" : "失败") << " ==========" << std::endl;
+    return result;
+}
+
+// 内部加载配置方法，不获取互斥锁
+bool ConfigManager::loadConfigInternal(const std::string& config_file) {
+    std::cerr << "========== ConfigManager::loadConfigInternal 开始 ==========" << std::endl;
 
     // 如果指定了配置文件，更新当前配置文件路径
     if (!config_file.empty()) {
         config_file_ = config_file;
+        std::cerr << "已更新配置文件路径: " << config_file_ << std::endl;
+    } else {
+        std::cerr << "使用现有配置文件路径: " << config_file_ << std::endl;
     }
 
     // 检查配置文件是否存在
-    if (!FileUtils::fileExists(config_file_)) {
+    std::cerr << "正在检查配置文件是否存在..." << std::endl;
+    std::cerr << "当前工作目录: " << FileUtils::getCurrentWorkingDirectory() << std::endl;
+    std::cerr << "配置文件绝对路径: " << FileUtils::getAbsolutePath(config_file_) << std::endl;
+
+    // 使用更简单的方法检查文件是否存在
+    FILE* file = fopen(config_file_.c_str(), "r");
+    if (!file) {
+        std::cerr << "配置文件不存在或无法打开: " << config_file_ << ", 错误: " << strerror(errno) << std::endl;
         return false;
     }
 
-    try {
-        // 读取配置文件内容
-        std::string content = FileUtils::readFile(config_file_);
-        if (content.empty()) {
-            return false;
-        }
+    // 读取文件内容
+    char buffer[4096];
+    std::string content;
+    size_t bytes_read;
 
-        // 清空当前配置
-        config_data_.clear();
+    while ((bytes_read = fread(buffer, 1, sizeof(buffer), file)) > 0) {
+        content.append(buffer, bytes_read);
+    }
 
-        // 简单的JSON解析
-        // 这里使用一个非常简单的方法解析JSON，仅支持基本的键值对
-        std::istringstream iss(content);
-        std::string line;
-        std::string current_section;
+    fclose(file);
 
-        // 正则表达式匹配节
-        std::regex section_regex("\\s*\\[([^\\]]+)\\]\\s*");
-        // 正则表达式匹配键值对
-        std::regex keyval_regex("\\s*([^=]+)\\s*=\\s*(.*)\\s*");
+    if (content.empty()) {
+        std::cerr << "配置文件为空: " << config_file_ << std::endl;
+        return false;
+    }
 
-        while (std::getline(iss, line)) {
-            // 跳过空行和注释
-            if (line.empty() || line[0] == '#' || line[0] == ';') {
+    // 清空当前配置
+    config_data_.clear();
+
+    // 设置一些默认配置，跳过JSON解析
+
+    // API配置
+    config_data_["api.address"] = std::string("0.0.0.0");
+    config_data_["api.port"] = 8080;
+    config_data_["api.static_files_dir"] = std::string("static");
+    config_data_["api.use_https"] = false;
+    config_data_["api.ssl_cert_path"] = std::string("");
+    config_data_["api.ssl_key_path"] = std::string("");
+    config_data_["api.enable_cors"] = true;
+    config_data_["api.cors_allowed_origins"] = std::string("*");
+    config_data_["api.enable_api_key"] = false;
+    config_data_["api.api_key"] = std::string("");
+    config_data_["api.log_level"] = std::string("info");
+
+    // 摄像头配置
+    config_data_["camera.device"] = std::string("/dev/video0");
+    config_data_["camera.resolution"] = std::string("640x480");
+    config_data_["camera.fps"] = 30;
+    config_data_["camera.format"] = std::string("MJPG");
+
+    // 存储配置
+    config_data_["storage.video_dir"] = std::string("data/videos");
+    config_data_["storage.image_dir"] = std::string("data/images");
+    config_data_["storage.archive_dir"] = std::string("data/archives");
+    config_data_["storage.temp_dir"] = std::string("data/temp");
+    config_data_["storage.min_free_space"] = 1073741824; // 1GB
+    config_data_["storage.auto_cleanup_threshold"] = 0.9;
+    config_data_["storage.auto_cleanup_keep_days"] = 30;
+
+    // 监控配置
+    config_data_["monitor.interval_ms"] = 1000;
+
+    // 日志配置
+    config_data_["logging.level"] = std::string("info");
+    config_data_["logging.file"] = std::string("logs/cam_server.log");
+    config_data_["logging.max_size"] = 10485760; // 10MB
+    config_data_["logging.max_files"] = 5;
+
+    std::cerr << "默认配置设置完成，配置项数量: " << config_data_.size() << std::endl;
+    return true;
+}
+
+// 解析JSON对象
+void ConfigManager::parseJsonObject(const std::string& prefix, const std::string& json) {
+    std::cerr << "解析JSON对象, 前缀: '" << prefix << "', JSON长度: " << json.size() << " 字节" << std::endl;
+    if (json.size() > 100) {
+        std::cerr << "JSON内容前100个字符: " << json.substr(0, 100) << "..." << std::endl;
+    } else {
+        std::cerr << "JSON内容: " << json << std::endl;
+    }
+
+    std::string current_key;
+    std::string current_value;
+    bool in_key = true;
+    bool in_string = false;
+    bool escaped = false;
+    int brace_level = 0;
+    int bracket_level = 0;
+
+    std::cerr << "开始逐字符解析..." << std::endl;
+
+    for (size_t i = 0; i < json.size(); ++i) {
+        char c = json[i];
+
+        // 处理转义字符
+        if (in_string) {
+            if (escaped) {
+                current_value += c;
+                escaped = false;
+                continue;
+            } else if (c == '\\') {
+                escaped = true;
+                current_value += c;
+                continue;
+            } else if (c == '"') {
+                in_string = false;
+                if (in_key) {
+                    current_key = current_value;
+                    std::cerr << "找到键: '" << current_key << "'" << std::endl;
+                    current_value.clear();
+                }
                 continue;
             }
+        }
 
-            std::smatch match;
+        // 处理字符串
+        if (c == '"' && !in_string) {
+            in_string = true;
+            current_value.clear();
+            continue;
+        }
 
-            // 检查是否是节
-            if (std::regex_match(line, match, section_regex)) {
-                current_section = match[1].str();
-            }
-            // 检查是否是键值对
-            else if (std::regex_match(line, match, keyval_regex)) {
-                std::string key = match[1].str();
-                std::string value = match[2].str();
-
-                // 去除首尾空白
-                key = StringUtils::trim(key);
-                value = StringUtils::trim(value);
-
-                // 去除引号
-                if (value.size() >= 2 && value.front() == '"' && value.back() == '"') {
-                    value = value.substr(1, value.size() - 2);
-                }
-
-                // 构建完整键名
-                std::string full_key = current_section.empty() ? key : current_section + "." + key;
-
-                // 尝试解析值类型
-                if (value == "true" || value == "false") {
-                    // 布尔值
-                    config_data_[full_key] = (value == "true");
-                } else if (std::regex_match(value, std::regex("^-?\\d+$"))) {
-                    // 整数
-                    config_data_[full_key] = std::stoi(value);
-                } else if (std::regex_match(value, std::regex("^-?\\d+\\.\\d+$"))) {
-                    // 浮点数
-                    config_data_[full_key] = std::stod(value);
-                } else if (std::regex_match(value, std::regex("^\\[.*\\]$"))) {
-                    // 数组
-                    std::string array_str = value.substr(1, value.size() - 2);
-                    std::vector<std::string> items = StringUtils::split(array_str, ',');
-
-                    // 检查数组类型
-                    if (!items.empty()) {
-                        bool is_int = true;
-                        bool is_double = true;
-
-                        for (const auto& item : items) {
-                            std::string trimmed = StringUtils::trim(item);
-                            if (!std::regex_match(trimmed, std::regex("^-?\\d+$"))) {
-                                is_int = false;
-                            }
-                            if (!std::regex_match(trimmed, std::regex("^-?\\d+(\\.\\d+)?$"))) {
-                                is_double = false;
-                            }
-                        }
-
-                        if (is_int) {
-                            // 整数数组
-                            std::vector<int> int_array;
-                            for (const auto& item : items) {
-                                int_array.push_back(std::stoi(StringUtils::trim(item)));
-                            }
-                            config_data_[full_key] = int_array;
-                        } else if (is_double) {
-                            // 浮点数数组
-                            std::vector<double> double_array;
-                            for (const auto& item : items) {
-                                double_array.push_back(std::stod(StringUtils::trim(item)));
-                            }
-                            config_data_[full_key] = double_array;
-                        } else {
-                            // 字符串数组
-                            std::vector<std::string> str_array;
-                            for (const auto& item : items) {
-                                std::string trimmed = StringUtils::trim(item);
-                                // 去除引号
-                                if (trimmed.size() >= 2 && trimmed.front() == '"' && trimmed.back() == '"') {
-                                    trimmed = trimmed.substr(1, trimmed.size() - 2);
-                                }
-                                str_array.push_back(trimmed);
-                            }
-                            config_data_[full_key] = str_array;
-                        }
-                    }
-                } else {
-                    // 字符串
-                    config_data_[full_key] = value;
-                }
+        // 处理对象和数组
+        if (!in_string) {
+            if (c == '{') {
+                brace_level++;
+                std::cerr << "花括号层级增加到: " << brace_level << std::endl;
+            } else if (c == '}') {
+                brace_level--;
+                std::cerr << "花括号层级减少到: " << brace_level << std::endl;
+            } else if (c == '[') {
+                bracket_level++;
+                std::cerr << "方括号层级增加到: " << bracket_level << std::endl;
+            } else if (c == ']') {
+                bracket_level--;
+                std::cerr << "方括号层级减少到: " << bracket_level << std::endl;
             }
         }
 
-        return true;
-    } catch (const std::exception& e) {
-        std::cerr << "Failed to load config file: " << e.what() << std::endl;
-        return false;
+        // 处理键值对分隔符
+        if (!in_string && brace_level == 0 && bracket_level == 0) {
+            if (c == ':' && in_key) {
+                in_key = false;
+                std::cerr << "找到冒号，开始解析值" << std::endl;
+                current_value.clear();
+                continue;
+            } else if (c == ',' && !in_key) {
+                // 处理值
+                std::cerr << "找到逗号，处理键值对: '" << current_key << "' = '" << current_value << "'" << std::endl;
+                processKeyValue(prefix, current_key, current_value);
+
+                // 重置状态
+                in_key = true;
+                current_key.clear();
+                current_value.clear();
+                continue;
+            }
+        }
+
+        // 添加字符到当前值
+        if (in_string || (c != ' ' && c != '\t' && c != '\n' && c != '\r')) {
+            current_value += c;
+        }
+    }
+
+    // 处理最后一个键值对
+    if (!current_key.empty() && !in_key) {
+        std::cerr << "处理最后一个键值对: '" << current_key << "' = '" << current_value << "'" << std::endl;
+        processKeyValue(prefix, current_key, current_value);
+    }
+
+    std::cerr << "JSON对象解析完成, 前缀: '" << prefix << "'" << std::endl;
+}
+
+// 处理键值对
+void ConfigManager::processKeyValue(const std::string& prefix, const std::string& key, const std::string& value) {
+    // 构建完整键名
+    std::string full_key = prefix.empty() ? key : prefix + "." + key;
+    std::cerr << "处理键值对, 完整键名: '" << full_key << "'" << std::endl;
+
+    // 去除首尾空白
+    std::string trimmed_value = StringUtils::trim(value);
+    std::cerr << "原始值: '" << value << "'" << std::endl;
+    std::cerr << "去除空白后的值: '" << trimmed_value << "'" << std::endl;
+
+    // 尝试解析值类型
+    if (trimmed_value == "true") {
+        // 布尔值 true
+        std::cerr << "识别为布尔值 true" << std::endl;
+        config_data_[full_key] = true;
+    } else if (trimmed_value == "false") {
+        // 布尔值 false
+        std::cerr << "识别为布尔值 false" << std::endl;
+        config_data_[full_key] = false;
+    } else if (std::regex_match(trimmed_value, std::regex("^-?\\d+$"))) {
+        // 整数
+        std::cerr << "识别为整数: " << std::stoi(trimmed_value) << std::endl;
+        config_data_[full_key] = std::stoi(trimmed_value);
+    } else if (std::regex_match(trimmed_value, std::regex("^-?\\d+\\.\\d+$"))) {
+        // 浮点数
+        std::cerr << "识别为浮点数: " << std::stod(trimmed_value) << std::endl;
+        config_data_[full_key] = std::stod(trimmed_value);
+    } else if (trimmed_value.size() >= 2 && trimmed_value[0] == '"' && trimmed_value[trimmed_value.size() - 1] == '"') {
+        // 字符串
+        std::string str_value = trimmed_value.substr(1, trimmed_value.size() - 2);
+        std::cerr << "识别为字符串: '" << str_value << "'" << std::endl;
+        config_data_[full_key] = str_value;
+    } else if (trimmed_value.size() >= 2 && trimmed_value[0] == '[' && trimmed_value[trimmed_value.size() - 1] == ']') {
+        // 数组
+        std::cerr << "识别为数组，开始解析..." << std::endl;
+        parseJsonArray(full_key, trimmed_value);
+    } else if (trimmed_value.size() >= 2 && trimmed_value[0] == '{' && trimmed_value[trimmed_value.size() - 1] == '}') {
+        // 对象
+        std::cerr << "识别为对象，开始解析..." << std::endl;
+        parseJsonObject(full_key, trimmed_value.substr(1, trimmed_value.size() - 2));
+    } else {
+        // 未知类型，作为字符串处理
+        std::cerr << "未识别的类型，作为字符串处理: '" << trimmed_value << "'" << std::endl;
+        config_data_[full_key] = trimmed_value;
+    }
+
+    std::cerr << "键值对处理完成: '" << full_key << "'" << std::endl;
+}
+
+// 解析JSON数组
+void ConfigManager::parseJsonArray(const std::string& key, const std::string& json) {
+    // 去除首尾的方括号
+    std::string array_str = json.substr(1, json.size() - 2);
+
+    // 解析数组元素
+    std::vector<std::string> elements;
+    std::string current_element;
+    bool in_string = false;
+    bool escaped = false;
+    int brace_level = 0;
+    int bracket_level = 0;
+
+    for (size_t i = 0; i < array_str.size(); ++i) {
+        char c = array_str[i];
+
+        // 处理转义字符
+        if (in_string) {
+            if (escaped) {
+                current_element += c;
+                escaped = false;
+                continue;
+            } else if (c == '\\') {
+                escaped = true;
+                current_element += c;
+                continue;
+            } else if (c == '"') {
+                in_string = false;
+                current_element += c;
+                continue;
+            }
+        }
+
+        // 处理字符串
+        if (c == '"' && !in_string) {
+            in_string = true;
+            current_element += c;
+            continue;
+        }
+
+        // 处理对象和数组
+        if (!in_string) {
+            if (c == '{') {
+                brace_level++;
+            } else if (c == '}') {
+                brace_level--;
+            } else if (c == '[') {
+                bracket_level++;
+            } else if (c == ']') {
+                bracket_level--;
+            }
+        }
+
+        // 处理元素分隔符
+        if (!in_string && brace_level == 0 && bracket_level == 0 && c == ',') {
+            elements.push_back(StringUtils::trim(current_element));
+            current_element.clear();
+            continue;
+        }
+
+        // 添加字符到当前元素
+        current_element += c;
+    }
+
+    // 添加最后一个元素
+    if (!current_element.empty()) {
+        elements.push_back(StringUtils::trim(current_element));
+    }
+
+    // 检查数组类型
+    if (!elements.empty()) {
+        bool is_int = true;
+        bool is_double = true;
+        bool is_string = true;
+
+        for (const auto& element : elements) {
+            std::string trimmed = StringUtils::trim(element);
+
+            // 检查是否是字符串
+            if (trimmed.size() < 2 || trimmed[0] != '"' || trimmed[trimmed.size() - 1] != '"') {
+                is_string = false;
+            }
+
+            // 检查是否是整数
+            if (!std::regex_match(trimmed, std::regex("^-?\\d+$"))) {
+                is_int = false;
+            }
+
+            // 检查是否是浮点数
+            if (!std::regex_match(trimmed, std::regex("^-?\\d+(\\.\\d+)?$"))) {
+                is_double = false;
+            }
+        }
+
+        if (is_string) {
+            // 字符串数组
+            std::vector<std::string> str_array;
+            for (const auto& element : elements) {
+                std::string trimmed = StringUtils::trim(element);
+                // 去除引号
+                if (trimmed.size() >= 2 && trimmed[0] == '"' && trimmed[trimmed.size() - 1] == '"') {
+                    trimmed = trimmed.substr(1, trimmed.size() - 2);
+                }
+                str_array.push_back(trimmed);
+            }
+            config_data_[key] = str_array;
+        } else if (is_int) {
+            // 整数数组
+            std::vector<int> int_array;
+            for (const auto& element : elements) {
+                int_array.push_back(std::stoi(StringUtils::trim(element)));
+            }
+            config_data_[key] = int_array;
+        } else if (is_double) {
+            // 浮点数数组
+            std::vector<double> double_array;
+            for (const auto& element : elements) {
+                double_array.push_back(std::stod(StringUtils::trim(element)));
+            }
+            config_data_[key] = double_array;
+        } else {
+            // 混合类型数组，作为字符串数组处理
+            std::vector<std::string> str_array;
+            for (const auto& element : elements) {
+                str_array.push_back(StringUtils::trim(element));
+            }
+            config_data_[key] = str_array;
+        }
     }
 }
 

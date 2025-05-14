@@ -183,6 +183,21 @@ private:
     ConfigManager(const ConfigManager&) = delete;
     ConfigManager& operator=(const ConfigManager&) = delete;
 
+    // 内部初始化方法，实际执行初始化逻辑
+    bool initializeInternal(const std::string& config_file);
+
+    // 内部加载配置方法，不获取互斥锁
+    bool loadConfigInternal(const std::string& config_file);
+
+    // 解析JSON对象
+    void parseJsonObject(const std::string& prefix, const std::string& json);
+
+    // 解析JSON数组
+    void parseJsonArray(const std::string& key, const std::string& json);
+
+    // 处理键值对
+    void processKeyValue(const std::string& prefix, const std::string& key, const std::string& value);
+
     // 配置数据
     std::unordered_map<std::string, std::any> config_data_;
     // 配置文件路径
