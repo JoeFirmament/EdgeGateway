@@ -114,6 +114,12 @@ public:
     ApiServerStatus getStatus() const;
 
     /**
+     * @brief 获取服务器配置
+     * @return 服务器配置
+     */
+    ApiServerConfig getConfig() const;
+
+    /**
      * @brief 注册路由处理函数
      * @param path 路径
      * @param method HTTP方法
@@ -140,6 +146,8 @@ private:
 
     // 注册API路由
     void registerApiRoutes();
+    // 注册系统控制API路由
+    void registerSystemControlRoutes();
     // 生成客户端ID
     std::string generateClientId();
 

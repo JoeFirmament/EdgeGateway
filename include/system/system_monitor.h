@@ -24,6 +24,22 @@ struct CpuInfo {
     int core_count;
     // 每个核心的使用率
     std::vector<double> core_usage;
+    // CPU频率（MHz）
+    double frequency;
+};
+
+/**
+ * @brief GPU信息结构体
+ */
+struct GpuInfo {
+    // GPU使用率（百分比）
+    double usage_percent;
+    // GPU温度（摄氏度）
+    double temperature;
+    // GPU内存使用率（百分比）
+    double memory_usage_percent;
+    // GPU频率（MHz）
+    double frequency;
 };
 
 /**
@@ -75,17 +91,37 @@ struct NetworkInfo {
 };
 
 /**
+ * @brief 电源状态结构体
+ */
+struct PowerInfo {
+    // 电源类型（AC/电池）
+    std::string power_source;
+    // 电池电量百分比（如果适用）
+    int battery_percent;
+    // 电池状态（充电/放电/已充满）
+    std::string battery_status;
+    // 预计剩余时间（分钟）
+    int remaining_time;
+    // 电源管理模式
+    std::string power_mode;
+};
+
+/**
  * @brief 系统信息结构体
  */
 struct SystemInfo {
     // CPU信息
     CpuInfo cpu;
+    // GPU信息
+    GpuInfo gpu;
     // 内存信息
     MemoryInfo memory;
     // 存储信息
     std::vector<StorageInfo> storage;
     // 网络信息
     std::vector<NetworkInfo> network;
+    // 电源信息
+    PowerInfo power;
     // 主机名
     std::string hostname;
     // 内核版本
@@ -96,6 +132,8 @@ struct SystemInfo {
     std::string uptime;
     // 系统时间
     std::string system_time;
+    // 系统负载（1分钟、5分钟、15分钟）
+    std::vector<double> load_average;
 };
 
 /**
@@ -141,6 +179,12 @@ public:
     CpuInfo getCpuInfo() const;
 
     /**
+     * @brief 获取GPU信息
+     * @return GPU信息
+     */
+    GpuInfo getGpuInfo() const;
+
+    /**
      * @brief 获取内存信息
      * @return 内存信息
      */
@@ -157,6 +201,18 @@ public:
      * @return 网络信息
      */
     std::vector<NetworkInfo> getNetworkInfo() const;
+
+    /**
+     * @brief 获取电源信息
+     * @return 电源信息
+     */
+    PowerInfo getPowerInfo() const;
+
+    /**
+     * @brief 获取系统负载
+     * @return 系统负载（1分钟、5分钟、15分钟）
+     */
+    std::vector<double> getLoadAverage() const;
 
     /**
      * @brief 设置系统信息更新回调
@@ -177,12 +233,18 @@ private:
     void updateSystemInfo();
     // 更新CPU信息
     void updateCpuInfo();
+    // 更新GPU信息
+    void updateGpuInfo();
     // 更新内存信息
     void updateMemoryInfo();
     // 更新存储信息
     void updateStorageInfo();
     // 更新网络信息
     void updateNetworkInfo();
+    // 更新电源信息
+    void updatePowerInfo();
+    // 更新系统负载
+    void updateLoadAverage();
     // 更新系统基本信息
     void updateBasicInfo();
     // 监控线程函数

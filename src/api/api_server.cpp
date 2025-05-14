@@ -241,6 +241,11 @@ ApiServerStatus ApiServer::getStatus() const {
     return status_copy;
 }
 
+ApiServerConfig ApiServer::getConfig() const {
+    // 返回当前配置的副本
+    return config_;
+}
+
 bool ApiServer::registerHandler(const std::string& path, const std::string& method,
                               std::function<void(const std::string&, std::string&)> handler) {
     if (!is_initialized_ || !rest_handler_) {
@@ -273,6 +278,91 @@ void ApiServer::setStatusCallback(std::function<void(const ApiServerStatus&)> ca
     status_callback_ = callback;
 }
 
+// 注册系统控制API路由
+void ApiServer::registerSystemControlRoutes() {
+    if (!rest_handler_) {
+        return;
+    }
+
+    // 注册重启服务API
+    rest_handler_->registerRoute("POST", "/system/restart-service", [](const HttpRequest& request) -> HttpResponse {
+        HttpResponse response;
+        response.status_code = 200;
+        response.status_message = "OK";
+        response.content_type = "application/json";
+
+        // 创建一个新线程来重启服务，这样可以先返回响应
+        std::thread([]{
+            // 等待2秒，确保响应已经发送
+            std::this_thread::sleep_for(std::chrono::seconds(2));
+
+            // 重启服务
+            LOG_INFO("正在重启服务...", "SystemControl");
+
+            // 停止API服务器
+            ApiServer::getInstance().stop();
+
+            // 等待1秒
+            std::this_thread::sleep_for(std::chrono::seconds(1));
+
+            // 重新启动API服务器
+            auto& api_server = ApiServer::getInstance();
+            // 使用当前配置重新初始化
+            api_server.initialize(api_server.getConfig());
+            api_server.start();
+
+            LOG_INFO("服务重启完成", "SystemControl");
+        }).detach();
+
+        response.body = "{\"status\":\"success\",\"message\":\"服务正在重启\"}";
+        return response;
+    });
+
+    // 注册重启系统API
+    rest_handler_->registerRoute("POST", "/system/restart", [](const HttpRequest& request) -> HttpResponse {
+        HttpResponse response;
+        response.status_code = 200;
+        response.status_message = "OK";
+        response.content_type = "application/json";
+
+        // 创建一个新线程来重启系统，这样可以先返回响应
+        std::thread([]{
+            // 等待2秒，确保响应已经发送
+            std::this_thread::sleep_for(std::chrono::seconds(2));
+
+            // 重启系统
+            LOG_INFO("正在重启系统...", "SystemControl");
+            ::system("sudo reboot");
+        }).detach();
+
+        response.body = "{\"status\":\"success\",\"message\":\"系统正在重启\"}";
+        return response;
+    });
+
+    // 注册关闭系统API
+    rest_handler_->registerRoute("POST", "/system/shutdown", [](const HttpRequest& request) -> HttpResponse {
+        HttpResponse response;
+        response.status_code = 200;
+        response.status_message = "OK";
+        response.content_type = "application/json";
+
+        // 创建一个新线程来关闭系统，这样可以先返回响应
+        std::thread([]{
+            // 等待2秒，确保响应已经发送
+            std::this_thread::sleep_for(std::chrono::seconds(2));
+
+            // 关闭系统
+            LOG_INFO("正在关闭系统...", "SystemControl");
+            ::system("sudo shutdown -h now");
+        }).detach();
+
+        response.body = "{\"status\":\"success\",\"message\":\"系统正在关闭\"}";
+        return response;
+    });
+
+    LOG_INFO("系统控制API路由注册成功", "ApiServer");
+}
+
 // 注册API路由
 void ApiServer::registerApiRoutes() {
     if (!rest_handler_) {
@@ -290,6 +380,9 @@ void ApiServer::registerApiRoutes() {
             LOG_INFO("摄像头API路由注册成功", "ApiServer");
         }
     }
+
+    // 注册系统控制API路由
+    registerSystemControlRoutes();
 
     // 注册MJPEG流端点
     rest_handler_->registerRoute("GET", "/api/stream", [](const HttpRequest& request) -> HttpResponse {
@@ -440,6 +533,25 @@ void ApiServer::registerApiRoutes() {
         response.body += "  \"cpu_info\": \"" + (cpu_info.core_count > 0 ? "RK3588 (" + std::to_string(cpu_info.core_count) + " cores)" : "RK3588") + "\",\n";
         response.body += "  \"cpu_usage\": " + std::to_string(static_cast<int>(cpu_info.usage_percent)) + ",\n";
         response.body += "  \"cpu_temperature\": " + std::to_string(static_cast<int>(cpu_info.temperature)) + ",\n";
+        response.body += "  \"cpu_frequency\": " + std::to_string(static_cast<int>(cpu_info.frequency)) + ",\n";
+
+        // GPU信息
+        auto gpu_info = system_monitor.getGpuInfo();
+        response.body += "  \"gpu_usage\": " + std::to_string(static_cast<int>(gpu_info.usage_percent)) + ",\n";
+        response.body += "  \"gpu_temperature\": " + std::to_string(static_cast<int>(gpu_info.temperature)) + ",\n";
+        response.body += "  \"gpu_memory_usage\": " + std::to_string(static_cast<int>(gpu_info.memory_usage_percent)) + ",\n";
+        response.body += "  \"gpu_frequency\": " + std::to_string(static_cast<int>(gpu_info.frequency)) + ",\n";
+
+        // 系统负载
+        auto load_average = system_monitor.getLoadAverage();
+        response.body += "  \"load_average\": [";
+        for (size_t i = 0; i < load_average.size(); i++) {
+            if (i > 0) {
+                response.body += ", ";
+            }
+            response.body += std::to_string(load_average[i]);
+        }
+        response.body += "],\n";
 
         // 内存信息
         response.body += "  \"memory_total\": \"" + formatSize(memory_info.total) + "\",\n";
@@ -502,6 +614,18 @@ void ApiServer::registerApiRoutes() {
 
         // 添加WiFi SSID到响应
         response.body += "  \"wifi_ssid\": \"" + wifi_ssid + "\",\n";
+
+        // 电源信息
+        auto power_info = system_monitor.getPowerInfo();
+        response.body += "  \"power_source\": \"" + power_info.power_source + "\",\n";
+        response.body += "  \"power_mode\": \"" + power_info.power_mode + "\",\n";
+        if (power_info.power_source == "Battery") {
+            response.body += "  \"battery_percent\": " + std::to_string(power_info.battery_percent) + ",\n";
+            response.body += "  \"battery_status\": \"" + power_info.battery_status + "\",\n";
+            if (power_info.remaining_time > 0) {
+                response.body += "  \"battery_remaining\": \"" + std::to_string(power_info.remaining_time) + " min\",\n";
+            }
+        }
 
         // 网络信息
         response.body += "  \"network\": [";

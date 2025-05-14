@@ -49,6 +49,22 @@
                                 <td id="cpu-temperature">-</td>
                             </tr>
                             <tr>
+                                <td>CPU频率:</td>
+                                <td id="cpu-frequency">-</td>
+                            </tr>
+                            <tr>
+                                <td>GPU使用率:</td>
+                                <td id="gpu-usage">-</td>
+                            </tr>
+                            <tr>
+                                <td>GPU温度:</td>
+                                <td id="gpu-temperature">-</td>
+                            </tr>
+                            <tr>
+                                <td>系统负载:</td>
+                                <td id="load-average">-</td>
+                            </tr>
+                            <tr>
                                 <td>运行时间:</td>
                                 <td id="uptime">-</td>
                             </tr>
@@ -131,6 +147,32 @@
                     </div>
 
                     <div class="card">
+                        <h3>电源信息</h3>
+                        <table class="info-table">
+                            <tr>
+                                <td>电源类型:</td>
+                                <td id="power-source">-</td>
+                            </tr>
+                            <tr>
+                                <td>电源模式:</td>
+                                <td id="power-mode">-</td>
+                            </tr>
+                            <tr id="battery-info-row" style="display:none;">
+                                <td>电池电量:</td>
+                                <td>
+                                    <div class="progress">
+                                        <div id="battery-percent-bar" class="progress-bar progress-bar-success" style="width:0%">0%</div>
+                                    </div>
+                                </td>
+                            </tr>
+                            <tr id="battery-status-row" style="display:none;">
+                                <td>电池状态:</td>
+                                <td id="battery-status">-</td>
+                            </tr>
+                        </table>
+                    </div>
+
+                    <div class="card">
                         <h3>服务器状态</h3>
                         <table class="info-table">
                             <tr>
@@ -146,6 +188,16 @@
                                 <td><span id="server-status" class="status-ok">正常</span></td>
                             </tr>
                         </table>
+                    </div>
+
+                    <div class="card">
+                        <h3>系统控制</h3>
+                        <div class="control-buttons">
+                            <button id="btn-restart-service" class="btn btn-warning">重启服务</button>
+                            <button id="btn-restart-system" class="btn btn-danger">重启系统</button>
+                            <button id="btn-shutdown" class="btn btn-danger">关闭系统</button>
+                        </div>
+                        <div id="control-status" class="control-status"></div>
                     </div>
                 </div>
             </div>
@@ -166,8 +218,46 @@
             // 加载系统信息
             loadSystemInfo();
 
-            // 定期刷新系统信息
-            setInterval(loadSystemInfo, 5000);
+            // 添加自动刷新控制
+            const refreshControlDiv = document.createElement('div');
+            refreshControlDiv.className = 'refresh-control';
+            refreshControlDiv.innerHTML = `
+                <label for="refresh-interval">自动刷新间隔:</label>
+                <select id="refresh-interval">
+                    <option value="0">关闭</option>
+                    <option value="1000">1秒</option>
+                    <option value="2000">2秒</option>
+                    <option value="5000" selected>5秒</option>
+                    <option value="10000">10秒</option>
+                    <option value="30000">30秒</option>
+                    <option value="60000">1分钟</option>
+                </select>
+            `;
+            document.querySelector('.card h2').after(refreshControlDiv);
+
+            // 自动刷新间隔
+            let refreshInterval = 5000;
+            let refreshTimer = null;
+
+            // 设置自动刷新
+            function startAutoRefresh() {
+                if (refreshTimer) {
+                    clearInterval(refreshTimer);
+                }
+
+                if (refreshInterval > 0) {
+                    refreshTimer = setInterval(loadSystemInfo, refreshInterval);
+                }
+            }
+
+            // 监听刷新间隔变化
+            document.getElementById('refresh-interval').addEventListener('change', function() {
+                refreshInterval = parseInt(this.value);
+                startAutoRefresh();
+            });
+
+            // 启动自动刷新
+            startAutoRefresh();
 
             // 加载系统信息
             function loadSystemInfo() {
@@ -189,6 +279,16 @@
                         document.getElementById('kernel-version').textContent = data.kernel_version || '-';
                         document.getElementById('cpu-info').textContent = data.cpu_info || 'RK3588';
                         document.getElementById('cpu-temperature').textContent = data.cpu_temperature ? `${data.cpu_temperature}°C` : '-';
+                        document.getElementById('cpu-frequency').textContent = data.cpu_frequency ? `${data.cpu_frequency} MHz` : '-';
+                        document.getElementById('gpu-usage').textContent = data.gpu_usage !== undefined ? `${data.gpu_usage}%` : '-';
+                        document.getElementById('gpu-temperature').textContent = data.gpu_temperature ? `${data.gpu_temperature}°C` : '-';
+
+                        // 更新系统负载
+                        if (data.load_average && data.load_average.length >= 3) {
+                            document.getElementById('load-average').textContent =
+                                `${data.load_average[0].toFixed(2)} (1分钟), ${data.load_average[1].toFixed(2)} (5分钟), ${data.load_average[2].toFixed(2)} (15分钟)`;
+                        }
+
                         document.getElementById('uptime').textContent = data.uptime || '-';
 
                         // 更新网络信息
@@ -216,6 +316,35 @@
                         document.getElementById('ip-address').textContent = ipAddress;
                         document.getElementById('wifi-ssid').textContent = wifiSsid;
                         document.getElementById('network-interfaces').innerHTML = networkInterfaces;
+
+                        // 更新电源信息
+                        document.getElementById('power-source').textContent = data.power_source || 'AC';
+                        document.getElementById('power-mode').textContent = data.power_mode || '-';
+
+                        // 如果是电池供电，显示电池信息
+                        if (data.power_source === 'Battery' && data.battery_percent !== undefined) {
+                            document.getElementById('battery-info-row').style.display = '';
+                            document.getElementById('battery-status-row').style.display = '';
+
+                            const batteryPercent = data.battery_percent;
+                            const batteryBar = document.getElementById('battery-percent-bar');
+                            batteryBar.style.width = `${batteryPercent}%`;
+                            batteryBar.textContent = `${batteryPercent}%`;
+
+                            // 根据电池电量设置颜色
+                            if (batteryPercent > 50) {
+                                batteryBar.className = 'progress-bar progress-bar-success';
+                            } else if (batteryPercent > 20) {
+                                batteryBar.className = 'progress-bar progress-bar-warning';
+                            } else {
+                                batteryBar.className = 'progress-bar progress-bar-danger';
+                            }
+
+                            document.getElementById('battery-status').textContent = data.battery_status || '-';
+                        } else {
+                            document.getElementById('battery-info-row').style.display = 'none';
+                            document.getElementById('battery-status-row').style.display = 'none';
+                        }
 
                         // 更新CPU使用率
                         const cpuUsage = data.cpu_usage || 0;
@@ -290,7 +419,77 @@
                     });
             }
 
-            // 此函数已被移除，现在使用API返回的真实数据
+            // 系统控制功能
+            const btnRestartService = document.getElementById('btn-restart-service');
+            const btnRestartSystem = document.getElementById('btn-restart-system');
+            const btnShutdown = document.getElementById('btn-shutdown');
+            const controlStatus = document.getElementById('control-status');
+
+            // 重启服务
+            btnRestartService.addEventListener('click', function() {
+                if (confirm('确定要重启服务吗？')) {
+                    fetch('/system/restart-service', { method: 'POST' })
+                        .then(response => {
+                            if (!response.ok) {
+                                throw new Error('重启服务失败');
+                            }
+                            return response.json();
+                        })
+                        .then(data => {
+                            controlStatus.textContent = '服务正在重启，请稍候...';
+                            controlStatus.className = 'control-status status-success';
+                            setTimeout(() => {
+                                window.location.reload();
+                            }, 5000);
+                        })
+                        .catch(error => {
+                            controlStatus.textContent = '重启服务失败: ' + error.message;
+                            controlStatus.className = 'control-status status-error';
+                        });
+                }
+            });
+
+            // 重启系统
+            btnRestartSystem.addEventListener('click', function() {
+                if (confirm('确定要重启系统吗？这将导致所有服务暂时不可用。')) {
+                    fetch('/system/restart', { method: 'POST' })
+                        .then(response => {
+                            if (!response.ok) {
+                                throw new Error('重启系统失败');
+                            }
+                            return response.json();
+                        })
+                        .then(data => {
+                            controlStatus.textContent = '系统正在重启，请稍候...';
+                            controlStatus.className = 'control-status status-success';
+                        })
+                        .catch(error => {
+                            controlStatus.textContent = '重启系统失败: ' + error.message;
+                            controlStatus.className = 'control-status status-error';
+                        });
+                }
+            });
+
+            // 关闭系统
+            btnShutdown.addEventListener('click', function() {
+                if (confirm('确定要关闭系统吗？这将导致系统不可用，直到手动重新启动。')) {
+                    fetch('/system/shutdown', { method: 'POST' })
+                        .then(response => {
+                            if (!response.ok) {
+                                throw new Error('关闭系统失败');
+                            }
+                            return response.json();
+                        })
+                        .then(data => {
+                            controlStatus.textContent = '系统正在关闭，请稍候...';
+                            controlStatus.className = 'control-status status-success';
+                        })
+                        .catch(error => {
+                            controlStatus.textContent = '关闭系统失败: ' + error.message;
+                            controlStatus.className = 'control-status status-error';
+                        });
+                }
+            });
         });
     </script>
 </body>
