@@ -236,14 +236,40 @@ void SystemMonitor::updateCpuInfo() {
     // 计算每个核心的使用率
     system_info_.cpu.core_usage.resize(core_count);
 
-    // 读取CPU温度（如果可用）
-    std::ifstream temp_file("/sys/class/thermal/thermal_zone0/temp");
-    if (temp_file.is_open()) {
+    // 读取CPU温度 - RK3588上CPU温度分布在多个thermal_zone
+    // thermal_zone0: soc-thermal (整体SoC温度)
+    // thermal_zone1: bigcore0-thermal (大核心0温度)
+    // thermal_zone2: bigcore1-thermal (大核心1温度)
+    // thermal_zone3: littlecore-thermal (小核心温度)
+    // thermal_zone4: center-thermal (中心温度)
+
+    // 首先尝试读取大核心温度（通常是最热的部分）
+    std::ifstream big_core_temp_file("/sys/class/thermal/thermal_zone1/temp");
+    if (big_core_temp_file.is_open()) {
         int temp;
-        temp_file >> temp;
-        system_info_.cpu.temperature = temp / 1000.0; // 转换为摄氏度
+        if (big_core_temp_file >> temp) {
+            system_info_.cpu.temperature = temp / 1000.0; // 转换为摄氏度
+            LOG_DEBUG("CPU大核心温度: " + std::to_string(system_info_.cpu.temperature) + "°C", "SystemMonitor");
+        } else {
+            LOG_DEBUG("无法读取CPU大核心温度值", "SystemMonitor");
+            system_info_.cpu.temperature = 0.0;
+        }
     } else {
-        system_info_.cpu.temperature = 0.0;
+        // 如果无法读取大核心温度，尝试读取SoC温度
+        std::ifstream soc_temp_file("/sys/class/thermal/thermal_zone0/temp");
+        if (soc_temp_file.is_open()) {
+            int temp;
+            if (soc_temp_file >> temp) {
+                system_info_.cpu.temperature = temp / 1000.0; // 转换为摄氏度
+                LOG_DEBUG("CPU SoC温度: " + std::to_string(system_info_.cpu.temperature) + "°C", "SystemMonitor");
+            } else {
+                LOG_DEBUG("无法读取CPU SoC温度值", "SystemMonitor");
+                system_info_.cpu.temperature = 0.0;
+            }
+        } else {
+            LOG_DEBUG("无法打开CPU温度文件", "SystemMonitor");
+            system_info_.cpu.temperature = 0.0;
+        }
     }
 
     // 读取CPU频率（如果可用）
@@ -278,34 +304,47 @@ void SystemMonitor::updateGpuInfo() {
         pclose(fp);
     }
 
-    // 尝试获取GPU温度（RK3588特定）
-    // 注意：RK3588的Mali-G610 GPU可能不提供温度信息
-    std::ifstream temp_file("/sys/devices/platform/fb000000.gpu/temp");
-    if (temp_file.is_open()) {
+    // 获取GPU温度 - RK3588上GPU温度在thermal_zone5
+    std::ifstream gpu_temp_file("/sys/class/thermal/thermal_zone5/temp");
+    if (gpu_temp_file.is_open()) {
         int temp;
-        if (temp_file >> temp) {
+        if (gpu_temp_file >> temp) {
             system_info_.gpu.temperature = temp / 1000.0; // 转换为摄氏度
             LOG_DEBUG("GPU温度: " + std::to_string(system_info_.gpu.temperature) + "°C", "SystemMonitor");
         } else {
             LOG_DEBUG("无法读取GPU温度值", "SystemMonitor");
+            // 使用CPU温度作为备选
+            system_info_.gpu.temperature = system_info_.cpu.temperature;
+            LOG_DEBUG("使用CPU温度作为GPU温度近似值: " + std::to_string(system_info_.gpu.temperature) + "°C", "SystemMonitor");
         }
     } else {
-        // 尝试使用其他方法获取GPU温度
-        FILE* fp = popen("cat /sys/class/thermal/thermal_zone*/type | grep -n gpu | cut -d':' -f1 | xargs -I{} cat /sys/class/thermal/thermal_zone$(({}-1))/temp 2>/dev/null", "r");
+        LOG_DEBUG("无法打开GPU温度文件: /sys/class/thermal/thermal_zone5/temp", "SystemMonitor");
+
+        // 尝试通过命令查找GPU温度
+        FILE* fp = popen("for i in /sys/class/thermal/thermal_zone*/type; do if grep -q -i gpu \"$i\"; then zone=${i%/type}; cat \"$zone/temp\" 2>/dev/null; break; fi; done", "r");
         if (fp) {
             char buffer[128];
             if (fgets(buffer, sizeof(buffer), fp) != NULL) {
                 try {
                     int temp = std::stoi(buffer);
                     system_info_.gpu.temperature = temp / 1000.0; // 转换为摄氏度
-                    LOG_DEBUG("通过thermal_zone获取GPU温度: " + std::to_string(system_info_.gpu.temperature) + "°C", "SystemMonitor");
+                    LOG_DEBUG("通过命令获取GPU温度: " + std::to_string(system_info_.gpu.temperature) + "°C", "SystemMonitor");
                 } catch (const std::exception& e) {
                     LOG_DEBUG("无法解析GPU温度: " + std::string(e.what()), "SystemMonitor");
+                    // 使用CPU温度作为备选
+                    system_info_.gpu.temperature = system_info_.cpu.temperature;
+                    LOG_DEBUG("使用CPU温度作为GPU温度近似值: " + std::to_string(system_info_.gpu.temperature) + "°C", "SystemMonitor");
                 }
+            } else {
+                // 使用CPU温度作为备选
+                system_info_.gpu.temperature = system_info_.cpu.temperature;
+                LOG_DEBUG("使用CPU温度作为GPU温度近似值: " + std::to_string(system_info_.gpu.temperature) + "°C", "SystemMonitor");
             }
             pclose(fp);
         } else {
-            LOG_DEBUG("无法获取GPU温度信息", "SystemMonitor");
+            // 使用CPU温度作为备选
+            system_info_.gpu.temperature = system_info_.cpu.temperature;
+            LOG_DEBUG("使用CPU温度作为GPU温度近似值: " + std::to_string(system_info_.gpu.temperature) + "°C", "SystemMonitor");
         }
     }
 

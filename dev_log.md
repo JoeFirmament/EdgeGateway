@@ -401,3 +401,51 @@ cam_server_cpp/
 - 优化MJPEG流媒体服务，提高性能和稳定性
 - 添加更多系统监控功能
 - 编写更多单元测试，验证功能正确性
+
+### 2023-05-16 - 增强系统信息页面和RK3588温度传感器集成
+
+**完成工作**：
+- 增强系统信息页面
+  - 添加CPU温度、IP地址和WiFi SSID显示
+  - 添加GPU使用率、GPU温度和电源状态显示
+  - 实现实时更新功能，支持可配置的刷新间隔
+  - 添加系统控制功能（重启服务、重启系统、关闭系统）
+- 集成RK3588温度传感器
+  - 识别并记录RK3588上的温度传感器位置
+  - 实现CPU和GPU温度的精确获取
+  - 优化温度显示，添加颜色指示和提示信息
+- 改进系统监控模块
+  - 添加系统负载监控
+  - 添加CPU频率监控
+  - 添加电源状态监控
+  - 优化资源使用率计算
+- 文档更新
+  - 在README.md中添加RK3588温度传感器信息
+  - 更新开发日志，记录温度传感器集成过程
+  - 添加系统信息API文档
+
+**遇到的问题**：
+- RK3588上的温度传感器位置需要确定
+- 某些命令行工具（如iwgetid、iw）在目标系统上不可用
+- GPU温度获取方法需要特殊处理
+- 系统控制API需要权限管理
+
+**解决方案**：
+- 通过/sys/class/thermal/目录识别温度传感器
+  - thermal_zone0: soc-thermal (整体SoC温度)
+  - thermal_zone1: bigcore0-thermal (大核心0温度)
+  - thermal_zone2: bigcore1-thermal (大核心1温度)
+  - thermal_zone3: littlecore-thermal (小核心温度)
+  - thermal_zone4: center-thermal (中心温度)
+  - thermal_zone5: gpu-thermal (GPU温度)
+  - thermal_zone6: npu-thermal (NPU温度)
+- 使用nmcli命令获取WiFi SSID信息
+- 直接从/sys/class/thermal/thermal_zone5/temp读取GPU温度
+- 实现系统控制API时添加确认机制和权限检查
+
+**下一步计划**：
+- 实现历史数据图表，显示资源使用趋势
+- 优化系统控制功能，添加更多安全措施
+- 添加更多硬件信息监控（如NPU使用率）
+- 实现系统信息导出功能
+- 添加更多单元测试，验证功能正确性

@@ -78,6 +78,27 @@ cam_server_cpp/
   - 可选：RK3588 MPP（Media Process Platform）
   - 可选：LibRGA（Rockchip Graphics Acceleration）
 
+## RK3588硬件信息
+
+### 温度传感器
+
+RK3588开发板上有多个温度传感器，可以通过`/sys/class/thermal/`目录访问：
+
+- **thermal_zone0**: soc-thermal (整体SoC温度)
+- **thermal_zone1**: bigcore0-thermal (大核心0温度)
+- **thermal_zone2**: bigcore1-thermal (大核心1温度)
+- **thermal_zone3**: littlecore-thermal (小核心温度)
+- **thermal_zone4**: center-thermal (中心温度)
+- **thermal_zone5**: gpu-thermal (GPU温度)
+- **thermal_zone6**: npu-thermal (NPU温度)
+
+获取温度示例：
+```bash
+# 获取GPU温度（毫摄氏度，需要除以1000转换为摄氏度）
+cat /sys/class/thermal/thermal_zone5/temp
+# 输出示例：38846（表示38.846°C）
+```
+
 ## 构建说明
 
 ### 安装依赖

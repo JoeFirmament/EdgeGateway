@@ -278,17 +278,43 @@
                         document.getElementById('hostname').textContent = data.hostname || '-';
                         document.getElementById('kernel-version').textContent = data.kernel_version || '-';
                         document.getElementById('cpu-info').textContent = data.cpu_info || 'RK3588';
-                        document.getElementById('cpu-temperature').textContent = data.cpu_temperature ? `${data.cpu_temperature}°C` : '-';
+                        // CPU温度显示
+                        const cpuTemp = document.getElementById('cpu-temperature');
+                        if (data.cpu_temperature && data.cpu_temperature > 0) {
+                            cpuTemp.textContent = `${data.cpu_temperature}°C`;
+
+                            // 根据温度设置颜色
+                            if (data.cpu_temperature < 50) {
+                                cpuTemp.style.color = '#2ecc71'; // 绿色 - 正常温度
+                            } else if (data.cpu_temperature < 70) {
+                                cpuTemp.style.color = '#f39c12'; // 橙色 - 较高温度
+                            } else {
+                                cpuTemp.style.color = '#e74c3c'; // 红色 - 高温
+                            }
+                        } else {
+                            cpuTemp.textContent = '不可用';
+                            cpuTemp.style.color = '#999';
+                        }
                         document.getElementById('cpu-frequency').textContent = data.cpu_frequency ? `${data.cpu_frequency} MHz` : '-';
                         document.getElementById('gpu-usage').textContent = data.gpu_usage !== undefined ? `${data.gpu_usage}%` : '-';
 
                         // GPU温度可能无法获取
                         const gpuTemp = document.getElementById('gpu-temperature');
                         if (data.gpu_temperature && data.gpu_temperature > 0) {
-                            gpuTemp.textContent = `${data.gpu_temperature}°C`;
+                            // 检查GPU温度是否与CPU温度相同（使用了近似值）
+                            if (data.gpu_temperature === data.cpu_temperature) {
+                                gpuTemp.textContent = `${data.gpu_temperature}°C (估计值)`;
+                                gpuTemp.title = '使用CPU温度作为近似值';
+                                gpuTemp.style.color = '#f0ad4e'; // 警告色
+                            } else {
+                                gpuTemp.textContent = `${data.gpu_temperature}°C`;
+                                gpuTemp.style.color = '';
+                                gpuTemp.title = '';
+                            }
                         } else {
                             gpuTemp.textContent = '不可用';
                             gpuTemp.style.color = '#999';
+                            gpuTemp.title = 'RK3588 GPU温度信息不可用';
                         }
 
                         // 更新系统负载
