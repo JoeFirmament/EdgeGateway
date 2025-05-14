@@ -1,5 +1,6 @@
 # 构建目录
 /build/
+/build_test/
 /bin/
 /lib/
 
@@ -34,6 +35,8 @@ _deps/
 # 日志文件
 *.log
 logs/
+server_log.txt
+debug.log
 
 # 临时文件
 *.tmp
