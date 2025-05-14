@@ -16,14 +16,14 @@ namespace api {
 struct ResolutionInfo {
     uint32_t width;
     uint32_t height;
-    
+
     bool operator<(const ResolutionInfo& other) const {
         if (width != other.width) {
             return width < other.width;
         }
         return height < other.height;
     }
-    
+
     bool operator==(const ResolutionInfo& other) const {
         return width == other.width && height == other.height;
     }
@@ -49,26 +49,26 @@ public:
      * @return CameraApi单例的引用
      */
     static CameraApi& getInstance();
-    
+
     /**
      * @brief 初始化API
      * @return 是否初始化成功
      */
     bool initialize();
-    
+
     /**
      * @brief 注册API路由
      * @param handler REST处理器
      * @return 是否注册成功
      */
     bool registerRoutes(RestHandler& handler);
-    
+
     /**
      * @brief 获取所有摄像头设备
      * @return 摄像头设备列表
      */
     std::vector<CameraDeviceInfo> getAllCameras();
-    
+
     /**
      * @brief 打开摄像头
      * @param device_path 设备路径
@@ -78,10 +78,22 @@ public:
      * @param fps 帧率
      * @return 是否成功打开
      */
-    bool openCamera(const std::string& device_path, 
+    bool openCamera(const std::string& device_path,
                    const std::string& format,
                    int width, int height, int fps);
-    
+
+    /**
+     * @brief 启动摄像头预览
+     * @return 是否成功启动
+     */
+    bool startPreview();
+
+    /**
+     * @brief 停止摄像头预览
+     * @return 是否成功停止
+     */
+    bool stopPreview();
+
 private:
     // 私有构造函数，防止外部创建实例
     CameraApi();
@@ -90,22 +102,31 @@ private:
     CameraApi& operator=(const CameraApi&) = delete;
     // 析构函数
     ~CameraApi();
-    
+
     // 处理获取所有摄像头的请求
     HttpResponse handleGetAllCameras(const HttpRequest& request);
-    
+
     // 处理打开摄像头的请求
     HttpResponse handleOpenCamera(const HttpRequest& request);
-    
+
+    // 处理启动摄像头预览的请求
+    HttpResponse handleStartPreview(const HttpRequest& request);
+
+    // 处理停止摄像头预览的请求
+    HttpResponse handleStopPreview(const HttpRequest& request);
+
+    // 处理获取摄像头预览图像的请求
+    HttpResponse handleGetPreview(const HttpRequest& request);
+
     // 查询设备信息
     bool queryDevice(const std::string& device_path, CameraDeviceInfo& info);
-    
+
     // 获取格式名称
     std::string getFormatName(uint32_t format);
-    
+
     // 是否已初始化
     bool is_initialized_;
-    
+
     // 格式名称映射
     std::map<uint32_t, std::string> format_names_;
 };

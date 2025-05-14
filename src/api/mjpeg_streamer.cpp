@@ -5,6 +5,7 @@
 
 #include <chrono>
 #include <algorithm>
+#include <iostream>  // for std::cerr
 
 // 使用FFmpeg进行JPEG编码
 extern "C" {
@@ -30,42 +31,57 @@ MjpegStreamer::~MjpegStreamer() {
 }
 
 bool MjpegStreamer::initialize(const MjpegStreamerConfig& config) {
+    std::cerr << "[MJPEG][mjpeg_streamer.cpp:initialize] 开始初始化MJPEG流处理器..." << std::endl;
+
     if (is_initialized_) {
+        std::cerr << "[MJPEG][mjpeg_streamer.cpp:initialize] MJPEG流处理器已经初始化" << std::endl;
         return true;
     }
 
+    std::cerr << "[MJPEG][mjpeg_streamer.cpp:initialize] 设置配置..." << std::endl;
     config_ = config;
 
     // 设置默认值
+    std::cerr << "[MJPEG][mjpeg_streamer.cpp:initialize] 设置默认值..." << std::endl;
     if (config_.jpeg_quality <= 0 || config_.jpeg_quality > 100) {
+        std::cerr << "[MJPEG][mjpeg_streamer.cpp:initialize] 设置默认JPEG质量: 80" << std::endl;
         config_.jpeg_quality = 80;
     }
     if (config_.max_fps <= 0) {
+        std::cerr << "[MJPEG][mjpeg_streamer.cpp:initialize] 设置默认最大帧率: 30" << std::endl;
         config_.max_fps = 30;
     }
     if (config_.max_clients <= 0) {
+        std::cerr << "[MJPEG][mjpeg_streamer.cpp:initialize] 设置默认最大客户端数: 10" << std::endl;
         config_.max_clients = 10;
     }
 
     is_initialized_ = true;
+    std::cerr << "[MJPEG][mjpeg_streamer.cpp:initialize] MJPEG流处理器初始化成功" << std::endl;
     LOG_INFO("MJPEG流处理器初始化成功", "MjpegStreamer");
     return true;
 }
 
 bool MjpegStreamer::start() {
+    std::cerr << "[MJPEG][mjpeg_streamer.cpp:start] 开始启动MJPEG流处理器..." << std::endl;
+
     if (!is_initialized_) {
+        std::cerr << "[MJPEG][mjpeg_streamer.cpp:start] MJPEG流处理器未初始化" << std::endl;
         LOG_ERROR("MJPEG流处理器未初始化", "MjpegStreamer");
         return false;
     }
 
     if (is_running_) {
+        std::cerr << "[MJPEG][mjpeg_streamer.cpp:start] MJPEG流处理器已经在运行中" << std::endl;
         return true;
     }
 
     // 获取摄像头管理器
+    std::cerr << "[MJPEG][mjpeg_streamer.cpp:start] 获取摄像头管理器..." << std::endl;
     auto& camera_manager = camera::CameraManager::getInstance();
-    
+
     // 设置帧回调
+    std::cerr << "[MJPEG][mjpeg_streamer.cpp:start] 设置帧回调..." << std::endl;
     camera_manager.setFrameCallback([this](const camera::Frame& frame) {
         handleFrame(frame);
     });
@@ -73,7 +89,8 @@ bool MjpegStreamer::start() {
     is_running_ = true;
     frame_count_ = 0;
     last_fps_time_ = std::chrono::steady_clock::now();
-    
+
+    std::cerr << "[MJPEG][mjpeg_streamer.cpp:start] MJPEG流处理器启动成功" << std::endl;
     LOG_INFO("MJPEG流处理器启动成功", "MjpegStreamer");
     return true;
 }
@@ -85,7 +102,7 @@ bool MjpegStreamer::stop() {
 
     // 获取摄像头管理器
     auto& camera_manager = camera::CameraManager::getInstance();
-    
+
     // 移除帧回调
     camera_manager.setFrameCallback(nullptr);
 
@@ -110,7 +127,7 @@ bool MjpegStreamer::addClient(const std::string& client_id,
     }
 
     std::lock_guard<std::mutex> lock(clients_mutex_);
-    
+
     // 检查客户端数量是否已达上限
     if (clients_.size() >= config_.max_clients) {
         LOG_ERROR("客户端数量已达上限", "MjpegStreamer");
@@ -127,27 +144,27 @@ bool MjpegStreamer::addClient(const std::string& client_id,
 
     // 添加到客户端列表
     clients_[client_id] = client;
-    
+
     LOG_INFO("添加MJPEG客户端: " + client_id, "MjpegStreamer");
     return true;
 }
 
 bool MjpegStreamer::removeClient(const std::string& client_id) {
     std::lock_guard<std::mutex> lock(clients_mutex_);
-    
+
     auto it = clients_.find(client_id);
     if (it == clients_.end()) {
         return false;
     }
-    
+
     // 调用关闭回调
     if (it->second->close_callback) {
         it->second->close_callback();
     }
-    
+
     // 从客户端列表中移除
     clients_.erase(it);
-    
+
     LOG_INFO("移除MJPEG客户端: " + client_id, "MjpegStreamer");
     return true;
 }
@@ -162,6 +179,9 @@ double MjpegStreamer::getCurrentFps() const {
 }
 
 void MjpegStreamer::handleFrame(const camera::Frame& frame) {
+    // 不要在每一帧都输出调试信息，这会导致大量输出
+    // std::cerr << "[MJPEG][mjpeg_streamer.cpp:handleFrame] 处理帧..." << std::endl;
+
     if (!is_running_) {
         return;
     }
@@ -174,6 +194,9 @@ void MjpegStreamer::handleFrame(const camera::Frame& frame) {
         current_fps_ = frame_count_ * 1000.0 / elapsed;
         frame_count_ = 0;
         last_fps_time_ = now;
+
+        // 每秒输出一次帧率信息
+        std::cerr << "[MJPEG][mjpeg_streamer.cpp:handleFrame] 当前帧率: " << current_fps_ << " FPS" << std::endl;
     }
 
     // 调整帧大小（如果需要）
@@ -197,14 +220,20 @@ void MjpegStreamer::handleFrame(const camera::Frame& frame) {
 
     // 发送给所有客户端
     std::lock_guard<std::mutex> lock(clients_mutex_);
+
+    // 每秒输出一次客户端数量信息
+    if (elapsed >= 1000) {
+        std::cerr << "[MJPEG][mjpeg_streamer.cpp:handleFrame] 当前客户端数量: " << clients_.size() << std::endl;
+    }
+
     for (auto it = clients_.begin(); it != clients_.end();) {
         auto& client = it->second;
-        
+
         // 检查帧率限制
         int64_t now_micros = utils::TimeUtils::getCurrentTimeMicros();
         int64_t elapsed_micros = now_micros - client->last_frame_time;
         int64_t min_interval_micros = 1000000 / config_.max_fps;
-        
+
         if (elapsed_micros >= min_interval_micros) {
             try {
                 // 发送帧
@@ -213,6 +242,7 @@ void MjpegStreamer::handleFrame(const camera::Frame& frame) {
                 ++it;
             } catch (const std::exception& e) {
                 // 发送失败，移除客户端
+                std::cerr << "[MJPEG][mjpeg_streamer.cpp:handleFrame] 发送帧失败: " << e.what() << std::endl;
                 LOG_ERROR("发送帧失败: " + std::string(e.what()), "MjpegStreamer");
                 if (client->error_callback) {
                     client->error_callback(e.what());
@@ -282,7 +312,7 @@ bool MjpegStreamer::encodeToJpeg(const camera::Frame& frame, std::vector<uint8_t
     // 转换像素格式
     SwsContext* sws_context = nullptr;
     int src_format;
-    
+
     switch (frame.format) {
         case camera::PixelFormat::YUYV:
             src_format = AV_PIX_FMT_YUYV422;
@@ -319,7 +349,7 @@ bool MjpegStreamer::encodeToJpeg(const camera::Frame& frame, std::vector<uint8_t
     // 转换像素格式
     const uint8_t* src_data[4] = {frame.data.data(), nullptr, nullptr, nullptr};
     int src_linesize[4] = {frame.width * (src_format == AV_PIX_FMT_YUYV422 ? 2 : (src_format == AV_PIX_FMT_NV12 ? 1 : 3)), 0, 0, 0};
-    
+
     sws_scale(sws_context, src_data, src_linesize, 0, frame.height,
               av_frame->data, av_frame->linesize);
 
@@ -369,7 +399,7 @@ bool MjpegStreamer::resizeFrame(const camera::Frame& frame, camera::Frame& resiz
     // 创建SwsContext
     SwsContext* sws_context = nullptr;
     int src_format;
-    
+
     switch (frame.format) {
         case camera::PixelFormat::YUYV:
             src_format = AV_PIX_FMT_YUYV422;
@@ -434,9 +464,9 @@ bool MjpegStreamer::resizeFrame(const camera::Frame& frame, camera::Frame& resiz
     // 转换
     const uint8_t* src_data[4] = {frame.data.data(), nullptr, nullptr, nullptr};
     uint8_t* dst_data[4] = {resized_frame.data.data(), nullptr, nullptr, nullptr};
-    
+
     int src_linesize[4], dst_linesize[4];
-    
+
     // 计算行大小
     switch (frame.format) {
         case camera::PixelFormat::YUYV:
@@ -461,7 +491,7 @@ bool MjpegStreamer::resizeFrame(const camera::Frame& frame, camera::Frame& resiz
             sws_freeContext(sws_context);
             return false;
     }
-    
+
     src_linesize[1] = src_linesize[2] = src_linesize[3] = 0;
     dst_linesize[1] = dst_linesize[2] = dst_linesize[3] = 0;
 
