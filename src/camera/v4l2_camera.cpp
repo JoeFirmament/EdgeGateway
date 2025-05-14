@@ -1,16 +1,19 @@
 #include "camera/v4l2_camera.h"
 #include "monitor/logger.h"
 #include "utils/string_utils.h"
+#include "utils/file_utils.h"
 
 #include <fcntl.h>
 #include <unistd.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
+#include <sys/stat.h>
 #include <dirent.h>
 #include <string.h>
 #include <algorithm>
 #include <set>
 #include <chrono>
+#include <iostream>  // 添加iostream头文件，用于std::cerr
 
 namespace cam_server {
 namespace camera {
@@ -83,66 +86,131 @@ std::vector<CameraDeviceInfo> V4L2Camera::scanDevices() {
 }
 
 bool V4L2Camera::open(const std::string& device_path, int width, int height, int fps) {
+    std::cerr << "[V4L2][v4l2_camera.cpp:open] 开始打开设备: " << device_path
+              << ", 分辨率: " << width << "x" << height
+              << ", 帧率: " << fps << std::endl;
+
     // 关闭已打开的设备
     if (is_open_) {
+        std::cerr << "[V4L2][v4l2_camera.cpp:open] 关闭已打开的设备" << std::endl;
         close();
     }
 
     // 打开新设备
+    std::cerr << "[V4L2][v4l2_camera.cpp:open] 尝试打开设备: " << device_path << std::endl;
+    std::cerr << "[V4L2][v4l2_camera.cpp:open] 当前工作目录: " << utils::FileUtils::getCurrentWorkingDirectory() << std::endl;
+    std::cerr << "[V4L2][v4l2_camera.cpp:open] 当前用户: " << getenv("USER") << std::endl;
+    std::cerr << "[V4L2][v4l2_camera.cpp:open] 当前用户ID: " << getuid() << std::endl;
+    std::cerr << "[V4L2][v4l2_camera.cpp:open] 当前组ID: " << getgid() << std::endl;
+
+    // 检查设备文件是否存在
+    struct stat st;
+    if (stat(device_path.c_str(), &st) != 0) {
+        std::cerr << "[V4L2][v4l2_camera.cpp:open] 设备文件不存在: " << device_path
+                  << ", 错误: " << strerror(errno) << std::endl;
+        LOG_ERROR("设备文件不存在: " + device_path, "V4L2Camera");
+        return false;
+    }
+    std::cerr << "[V4L2][v4l2_camera.cpp:open] 设备文件存在, 权限: " << std::oct << (st.st_mode & 0777) << std::dec << std::endl;
+    std::cerr << "[V4L2][v4l2_camera.cpp:open] 设备文件所有者: " << st.st_uid << ", 组: " << st.st_gid << std::endl;
+
+    std::cerr << "[V4L2][v4l2_camera.cpp:open] 尝试打开设备文件: " << device_path << std::endl;
+    std::cerr.flush();
+
+    // 尝试使用不同的标志打开设备
     fd_ = ::open(device_path.c_str(), O_RDWR);
     if (fd_ < 0) {
-        LOG_ERROR("无法打开设备: " + device_path, "V4L2Camera");
-        return false;
+        std::cerr << "[V4L2][v4l2_camera.cpp:open] 无法打开设备: " << device_path
+                  << ", 错误: " << strerror(errno) << ", 错误码: " << errno << std::endl;
+        std::cerr.flush();
+
+        // 尝试使用只读模式打开
+        std::cerr << "[V4L2][v4l2_camera.cpp:open] 尝试使用只读模式打开设备..." << std::endl;
+        std::cerr.flush();
+        fd_ = ::open(device_path.c_str(), O_RDONLY);
+        if (fd_ < 0) {
+            std::cerr << "[V4L2][v4l2_camera.cpp:open] 使用只读模式也无法打开设备: " << device_path
+                      << ", 错误: " << strerror(errno) << ", 错误码: " << errno << std::endl;
+            std::cerr.flush();
+            LOG_ERROR("无法打开设备: " + device_path + ", 错误: " + std::string(strerror(errno)), "V4L2Camera");
+            return false;
+        }
+        std::cerr << "[V4L2][v4l2_camera.cpp:open] 使用只读模式成功打开设备, fd: " << fd_ << std::endl;
+        std::cerr.flush();
+    } else {
+        std::cerr << "[V4L2][v4l2_camera.cpp:open] 设备打开成功, fd: " << fd_ << std::endl;
+        std::cerr.flush();
     }
 
     // 获取设备信息
+    std::cerr << "[V4L2][v4l2_camera.cpp:open] 尝试获取设备信息..." << std::endl;
     struct v4l2_capability cap;
     if (ioctl(fd_, VIDIOC_QUERYCAP, &cap) < 0) {
+        std::cerr << "[V4L2][v4l2_camera.cpp:open] 无法获取设备信息, 错误: " << strerror(errno) << std::endl;
         LOG_ERROR("无法获取设备信息", "V4L2Camera");
         ::close(fd_);
         fd_ = -1;
         return false;
     }
+    std::cerr << "[V4L2][v4l2_camera.cpp:open] 设备信息获取成功" << std::endl;
 
     // 检查是否为视频捕获设备
+    std::cerr << "[V4L2][v4l2_camera.cpp:open] 检查是否为视频捕获设备..." << std::endl;
     if (!(cap.capabilities & V4L2_CAP_VIDEO_CAPTURE)) {
+        std::cerr << "[V4L2][v4l2_camera.cpp:open] 不是视频捕获设备" << std::endl;
         LOG_ERROR("不是视频捕获设备", "V4L2Camera");
         ::close(fd_);
         fd_ = -1;
         return false;
     }
+    std::cerr << "[V4L2][v4l2_camera.cpp:open] 是视频捕获设备" << std::endl;
 
     // 设置当前设备信息
+    std::cerr << "[V4L2][v4l2_camera.cpp:open] 设置当前设备信息..." << std::endl;
     device_info_.device_path = device_path;
     device_info_.device_name = reinterpret_cast<const char*>(cap.card);
     device_info_.description = reinterpret_cast<const char*>(cap.driver);
+    std::cerr << "[V4L2][v4l2_camera.cpp:open] 设备名称: " << device_info_.device_name << std::endl;
+    std::cerr << "[V4L2][v4l2_camera.cpp:open] 设备描述: " << device_info_.description << std::endl;
 
     // 查询设备支持的格式
+    std::cerr << "[V4L2][v4l2_camera.cpp:open] 查询设备支持的格式..." << std::endl;
     queryCapabilities(fd_, device_info_);
+    std::cerr << "[V4L2][v4l2_camera.cpp:open] 支持的分辨率数量: " << device_info_.supported_resolutions.size() << std::endl;
+    std::cerr << "[V4L2][v4l2_camera.cpp:open] 支持的格式数量: " << device_info_.supported_formats.size() << std::endl;
 
     // 设置视频格式
+    std::cerr << "[V4L2][v4l2_camera.cpp:open] 设置视频格式: " << width << "x" << height << ", 格式: YUYV" << std::endl;
     if (!setVideoFormat(width, height, V4L2_PIX_FMT_YUYV)) {
+        std::cerr << "[V4L2][v4l2_camera.cpp:open] 无法设置视频格式" << std::endl;
         LOG_ERROR("无法设置视频格式", "V4L2Camera");
         ::close(fd_);
         fd_ = -1;
         return false;
     }
+    std::cerr << "[V4L2][v4l2_camera.cpp:open] 视频格式设置成功" << std::endl;
 
     // 设置帧率
+    std::cerr << "[V4L2][v4l2_camera.cpp:open] 设置帧率: " << fps << std::endl;
     if (!setFrameRate(fps)) {
+        std::cerr << "[V4L2][v4l2_camera.cpp:open] 无法设置帧率" << std::endl;
         LOG_ERROR("无法设置帧率", "V4L2Camera");
         ::close(fd_);
         fd_ = -1;
         return false;
     }
+    std::cerr << "[V4L2][v4l2_camera.cpp:open] 帧率设置成功" << std::endl;
 
     // 初始化设备
+    std::cerr << "[V4L2][v4l2_camera.cpp:open] 初始化设备..." << std::endl;
     if (!initDevice()) {
+        std::cerr << "[V4L2][v4l2_camera.cpp:open] 无法初始化设备" << std::endl;
         LOG_ERROR("无法初始化设备", "V4L2Camera");
         ::close(fd_);
         fd_ = -1;
         return false;
     }
+    std::cerr << "[V4L2][v4l2_camera.cpp:open] 设备初始化成功" << std::endl;
 
     is_open_ = true;
 
@@ -153,6 +221,7 @@ bool V4L2Camera::open(const std::string& device_path, int width, int height, int
     current_params_.format = PixelFormat::YUYV;
 
     LOG_INFO("成功打开摄像头设备: " + device_path, "V4L2Camera");
+    std::cerr << "[V4L2][v4l2_camera.cpp:open] 成功打开摄像头设备: " << device_path << std::endl;
     return true;
 }
 
