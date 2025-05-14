@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RK3588摄像头服务器 - 摄像头选择</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>RK3588摄像头服务器</h1>
+        </header>
+
+        <nav>
+            <ul>
+                <li><a href="index.html">实时预览</a></li>
+                <li><a href="cameras.html">设备管理</a></li>
+                <li><a href="camera_select.html" class="active">摄像头选择</a></li>
+                <li><a href="system_info.html">系统信息</a></li>
+            </ul>
+        </nav>
+
+        <main>
+            <div class="card">
+                <h2>摄像头选择</h2>
+
+                <div id="message" class="message hidden"></div>
+
+                <div id="loading" class="loading">正在加载摄像头设备列表...</div>
+
+                <div id="camera-list" class="camera-list"></div>
+
+                <div id="preview-container" class="preview-container hidden">
+                    <h3>摄像头预览</h3>
+                    <img id="preview" src="" alt="摄像头预览">
+                    <div class="controls mt-2">
+                        <button id="stop-preview" class="btn btn-danger">停止预览</button>
+                        <button id="capture-image" class="btn btn-secondary">拍照</button>
+                        <button id="start-recording" class="btn btn-secondary">开始录制</button>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <footer>
+            <p>&copy; 2023 RK3588摄像头服务器 | 版本: 0.1.0</p>
+        </footer>
+    </div>
+
+    <script>
+        // 页面加载完成后执行
+        document.addEventListener('DOMContentLoaded', function() {
+            // 获取摄像头列表
+            fetchCameras();
+
+            // 停止预览按钮点击事件
+            document.getElementById('stop-preview').addEventListener('click', function() {
+                stopPreview();
+            });
+
+            // 拍照按钮点击事件
+            document.getElementById('capture-image').addEventListener('click', function() {
+                captureImage();
+            });
+
+            // 录制按钮点击事件
+            const recordButton = document.getElementById('start-recording');
+            recordButton.addEventListener('click', function() {
+                if (recordButton.textContent === '开始录制') {
+                    startRecording();
+                } else {
+                    stopRecording();
+                }
+            });
+        });
+
+        // 获取摄像头列表
+        function fetchCameras() {
+            fetch('/api/cameras')
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('获取摄像头列表失败');
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    displayCameras(data.cameras);
+                })
+                .catch(error => {
+                    showMessage(error.message, 'error');
+                    console.error('Error:', error);
+                })
+                .finally(() => {
+                    document.getElementById('loading').classList.add('hidden');
+                });
+        }
+
+        // 显示摄像头列表
+        function displayCameras(cameras) {
+            const cameraList = document.getElementById('camera-list');
+            cameraList.innerHTML = '';
+
+            if (cameras.length === 0) {
+                showMessage('未找到可用的摄像头设备', 'info');
+                return;
+            }
+
+            cameras.forEach(camera => {
+                const cameraCard = document.createElement('div');
+                cameraCard.className = 'camera-card';
+
+                // 摄像头名称
+                const cameraName = document.createElement('h3');
+                cameraName.textContent = camera.name || '未知设备';
+                cameraCard.appendChild(cameraName);
+
+                // 摄像头信息
+                const cameraInfo = document.createElement('div');
+                cameraInfo.className = 'camera-info';
+
+                const cameraPath = document.createElement('p');
+                cameraPath.textContent = `设备路径: ${camera.path}`;
+                cameraInfo.appendChild(cameraPath);
+
+                const cameraBusInfo = document.createElement('p');
+                cameraBusInfo.textContent = `总线信息: ${camera.bus_info || '未知'}`;
+                cameraInfo.appendChild(cameraBusInfo);
+
+                cameraCard.appendChild(cameraInfo);
+
+                // 格式选择
+                const formatLabel = document.createElement('label');
+                formatLabel.textContent = '格式:';
+                cameraCard.appendChild(formatLabel);
+
+                const formatSelect = document.createElement('select');
+                formatSelect.className = 'format-select';
+                formatSelect.dataset.cameraPath = camera.path;
+
+                // 添加格式选项
+                Object.keys(camera.formats).forEach(format => {
+                    const option = document.createElement('option');
+                    option.value = format;
+                    option.textContent = format;
+                    formatSelect.appendChild(option);
+                });
+
+                cameraCard.appendChild(formatSelect);
+
+                // 分辨率选择
+                const resolutionLabel = document.createElement('label');
+                resolutionLabel.textContent = '分辨率:';
+                cameraCard.appendChild(resolutionLabel);
+
+                const resolutionSelect = document.createElement('select');
+                resolutionSelect.className = 'resolution-select';
+
+                // 初始化分辨率选项
+                updateResolutionOptions(resolutionSelect, camera.formats[formatSelect.value]);
+
+                cameraCard.appendChild(resolutionSelect);
+
+                // 帧率输入
+                const fpsLabel = document.createElement('label');
+                fpsLabel.textContent = '帧率:';
+                cameraCard.appendChild(fpsLabel);
+
+                const fpsInput = document.createElement('input');
+                fpsInput.type = 'number';
+                fpsInput.className = 'fps-input';
+                fpsInput.value = '30';
+                fpsInput.min = '1';
+                fpsInput.max = '60';
+                cameraCard.appendChild(fpsInput);
+
+                // 格式变更事件
+                formatSelect.addEventListener('change', function() {
+                    updateResolutionOptions(resolutionSelect, camera.formats[this.value]);
+                });
+
+                // 操作按钮
+                const cameraActions = document.createElement('div');
+                cameraActions.className = 'camera-actions';
+
+                const openButton = document.createElement('button');
+                openButton.className = 'btn';
+                openButton.textContent = '打开摄像头';
+                openButton.addEventListener('click', function() {
+                    openCamera(camera.path, formatSelect.value, resolutionSelect.value, fpsInput.value);
+                });
+
+                cameraActions.appendChild(openButton);
+                cameraCard.appendChild(cameraActions);
+
+                cameraList.appendChild(cameraCard);
+            });
+        }
+
+        // 更新分辨率选项
+        function updateResolutionOptions(selectElement, resolutions) {
+            selectElement.innerHTML = '';
+
+            resolutions.forEach(res => {
+                const option = document.createElement('option');
+                option.value = `${res.width}x${res.height}`;
+                option.textContent = `${res.width}x${res.height}`;
+                selectElement.appendChild(option);
+            });
+        }
+
+        // 打开摄像头
+        function openCamera(devicePath, format, resolution, fps) {
+            const [width, height] = resolution.split('x').map(Number);
+
+            fetch('/api/cameras/open', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    device_path: devicePath,
+                    format: format,
+                    width: width,
+                    height: height,
+                    fps: parseInt(fps)
+                })
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('打开摄像头请求失败');
+                }
+                return response.json();
+            })
+            .then(data => {
+                if (data.success) {
+                    showMessage('摄像头已成功打开', 'success');
+
+                    // 启动预览
+                    startPreview(width, height, fps);
+                } else {
+                    showMessage(data.error || '打开摄像头失败', 'error');
+                }
+            })
+            .catch(error => {
+                showMessage(error.message, 'error');
+                console.error('Error:', error);
+            });
+        }
+
+        // 启动预览
+        function startPreview(width, height, fps) {
+            fetch('/api/cameras/start_preview', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('启动预览请求失败');
+                }
+                return response.json();
+            })
+            .then(data => {
+                if (data.success) {
+                    // 显示预览
+                    const previewContainer = document.getElementById('preview-container');
+                    previewContainer.classList.remove('hidden');
+
+                    // 设置预览图像源，添加时间戳防止缓存
+                    const preview = document.getElementById('preview');
+                    preview.src = `/api/stream?width=${width}&height=${height}&quality=80&fps=${fps}&t=${Date.now()}`;
+
+                    showMessage('预览已启动', 'success');
+                } else {
+                    showMessage(data.error || '启动预览失败', 'error');
+                }
+            })
+            .catch(error => {
+                showMessage(error.message, 'error');
+                console.error('Error:', error);
+            });
+        }
+
+        // 停止预览
+        function stopPreview() {
+            fetch('/api/cameras/stop_preview', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('停止预览请求失败');
+                }
+                return response.json();
+            })
+            .then(data => {
+                if (data.success) {
+                    const previewContainer = document.getElementById('preview-container');
+                    const preview = document.getElementById('preview');
+
+                    // 清除预览图像源
+                    preview.src = '';
+
+                    // 隐藏预览容器
+                    previewContainer.classList.add('hidden');
+
+                    showMessage('预览已停止', 'success');
+                } else {
+                    showMessage(data.error || '停止预览失败', 'error');
+                }
+            })
+            .catch(error => {
+                showMessage(error.message, 'error');
+                console.error('Error:', error);
+            });
+        }
+
+        // 拍照
+        function captureImage() {
+            if (!document.getElementById('preview').src) {
+                showMessage('无法拍照：摄像头未连接', 'error');
+                return;
+            }
+
+            try {
+                // 创建canvas元素
+                const canvas = document.createElement('canvas');
+                const img = document.getElementById('preview');
+                canvas.width = img.naturalWidth;
+                canvas.height = img.naturalHeight;
+
+                // 绘制当前帧
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0);
+
+                // 转换为图片并下载
+                const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
+                const link = document.createElement('a');
+                link.href = dataUrl;
+                link.download = `capture_${new Date().toISOString().replace(/:/g, '-')}.jpg`;
+                link.click();
+
+                showMessage('图片已保存', 'success');
+            } catch (error) {
+                console.error('拍照失败:', error);
+                showMessage('拍照失败: ' + error.message, 'error');
+            }
+        }
+
+        // 开始录制
+        function startRecording() {
+            fetch('/api/cameras/start_recording', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    format: 'mp4',
+                    duration: 0 // 0表示无限制，直到手动停止
+                })
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('开始录制请求失败');
+                }
+                return response.json();
+            })
+            .then(data => {
+                if (data.success) {
+                    const recordButton = document.getElementById('start-recording');
+                    recordButton.textContent = '停止录制';
+                    recordButton.classList.remove('btn-secondary');
+                    recordButton.classList.add('btn-danger');
+
+                    // 开始更新录制时间
+                    startRecordingTimer();
+
+                    showMessage('录制已开始', 'success');
+                } else {
+                    showMessage(data.error || '开始录制失败', 'error');
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                showMessage('开始录制失败: ' + error.message, 'error');
+            });
+        }
+
+        // 停止录制
+        function stopRecording() {
+            fetch('/api/cameras/stop_recording', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('停止录制请求失败');
+                }
+                return response.json();
+            })
+            .then(data => {
+                if (data.success) {
+                    const recordButton = document.getElementById('start-recording');
+                    recordButton.textContent = '开始录制';
+                    recordButton.classList.remove('btn-danger');
+                    recordButton.classList.add('btn-secondary');
+
+                    // 停止更新录制时间
+                    stopRecordingTimer();
+
+                    showMessage(`录制已停止，视频已保存: ${data.file_path || '未知路径'}`, 'success');
+                } else {
+                    showMessage(data.error || '停止录制失败', 'error');
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                showMessage('停止录制失败: ' + error.message, 'error');
+            });
+        }
+
+        // 录制计时器
+        let recordingTimer = null;
+        let recordingStartTime = null;
+
+        // 开始录制计时器
+        function startRecordingTimer() {
+            recordingStartTime = Date.now();
+
+            // 清除可能存在的旧计时器
+            if (recordingTimer) {
+                clearInterval(recordingTimer);
+            }
+
+            // 创建新计时器
+            recordingTimer = setInterval(updateRecordingTime, 1000);
+            updateRecordingTime(); // 立即更新一次
+        }
+
+        // 停止录制计时器
+        function stopRecordingTimer() {
+            if (recordingTimer) {
+                clearInterval(recordingTimer);
+                recordingTimer = null;
+            }
+        }
+
+        // 更新录制时间
+        function updateRecordingTime() {
+            if (!recordingStartTime) return;
+
+            const elapsedTime = Math.floor((Date.now() - recordingStartTime) / 1000);
+            const hours = Math.floor(elapsedTime / 3600);
+            const minutes = Math.floor((elapsedTime % 3600) / 60);
+            const seconds = elapsedTime % 60;
+
+            const timeStr = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+
+            const recordButton = document.getElementById('start-recording');
+            recordButton.textContent = `停止录制 (${timeStr})`;
+        }
+
+        // 显示消息
+        function showMessage(message, type) {
+            const messageElement = document.getElementById('message');
+            messageElement.textContent = message;
+            messageElement.className = `message ${type}`;
+            messageElement.classList.remove('hidden');
+
+            // 5秒后自动隐藏
+            setTimeout(() => {
+                messageElement.classList.add('hidden');
+            }, 5000);
+        }
+    </script>
+</body>
+</html>
