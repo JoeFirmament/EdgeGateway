@@ -462,7 +462,7 @@ void ApiServer::registerApiRoutes() {
 
         // 获取WiFi SSID
         std::string wifi_ssid = "-";
-        FILE* fp = popen("iwgetid -r", "r");
+        FILE* fp = popen("nmcli -t -f active,ssid dev wifi | grep '^yes:' | cut -d':' -f2", "r");
         if (fp) {
             char buffer[128];
             if (fgets(buffer, sizeof(buffer), fp) != NULL) {
@@ -473,6 +473,31 @@ void ApiServer::registerApiRoutes() {
                 }
             }
             pclose(fp);
+        }
+
+        // 获取WiFi信号强度
+        std::string signal_strength = "-";
+        FILE* fp2 = popen("cat /proc/net/wireless 2>/dev/null | grep -v \"Inter-\" | grep -v \"face\" | awk '{print $3}'", "r");
+        if (fp2) {
+            char buffer[128];
+            if (fgets(buffer, sizeof(buffer), fp2) != NULL) {
+                signal_strength = buffer;
+                // 移除换行符
+                if (!signal_strength.empty() && signal_strength[signal_strength.length()-1] == '\n') {
+                    signal_strength.erase(signal_strength.length()-1);
+                }
+
+                // 如果获取到信号强度，添加单位
+                if (signal_strength != "-") {
+                    signal_strength += " dBm";
+                }
+            }
+            pclose(fp2);
+        }
+
+        // 如果需要，可以将信号强度添加到SSID信息中
+        if (wifi_ssid != "-" && signal_strength != "-") {
+            wifi_ssid += " (" + signal_strength + ")";
         }
 
         // 添加WiFi SSID到响应
