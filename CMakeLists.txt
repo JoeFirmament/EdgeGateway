@@ -99,7 +99,7 @@ add_subdirectory(src)
 add_subdirectory(src/tools)
 
 # 可选：添加测试
-option(BUILD_TESTS "Build tests" OFF)
+option(BUILD_TESTS "Build tests" ON)
 if(BUILD_TESTS)
     enable_testing()
     add_subdirectory(tests)

@@ -1,4 +1,4 @@
-#include <iostream>
+#include <iostream>  // for std::cout, std::cerr, std::endl
 #include <string>
 #include <memory>
 #include <csignal>
@@ -326,10 +326,13 @@ int main(int argc, char* argv[]) {
         }
 
         // 初始化API服务器
+        std::cerr << "正在初始化API服务器..." << std::endl;
         if (!initialize_api_server()) {
             LOG_ERROR("初始化API服务器失败", "Main");
+            std::cerr << "初始化API服务器失败" << std::endl;
             return 1;
         }
+        std::cerr << "API服务器初始化成功" << std::endl;
 
         // 初始化系统监控器
         if (!initialize_system_monitor()) {

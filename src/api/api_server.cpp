@@ -12,6 +12,7 @@
 #include <sstream>
 #include <random>
 #include <iomanip>
+#include <iostream>  // for std::cerr
 
 namespace cam_server {
 namespace api {
@@ -107,6 +108,13 @@ bool ApiServer::start() {
 
     // 启动Web服务器
     LOG_INFO("正在启动Web服务器...", "ApiServer");
+    std::cerr << "正在启动Web服务器..." << std::endl;
+    if (!web_server_) {
+        std::cerr << "Web服务器对象为空" << std::endl;
+        LOG_ERROR("Web服务器对象为空", "ApiServer");
+        return false;
+    }
+
     if (!web_server_->start()) {
         std::lock_guard<std::mutex> lock(status_mutex_);
         status_.state = ApiServerState::ERROR;
@@ -115,9 +123,11 @@ bool ApiServer::start() {
             status_callback_(status_);
         }
         LOG_ERROR("无法启动Web服务器", "ApiServer");
+        std::cerr << "无法启动Web服务器" << std::endl;
         return false;
     }
     LOG_INFO("Web服务器启动成功", "ApiServer");
+    std::cerr << "Web服务器启动成功" << std::endl;
 
     // 更新状态
     {

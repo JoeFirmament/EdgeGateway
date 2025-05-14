@@ -14,6 +14,8 @@
 #include <chrono>
 #include <cstdlib>  // for memset and system()
 #include <sys/stat.h>
+#include <errno.h>   // for errno and strerror
+#include <iostream>  // for std::cerr
 
 // 使用Mongoose作为HTTP服务器库
 #include "mongoose.h"
@@ -75,13 +77,20 @@ public:
 
         // 创建HTTP连接
         LOG_INFO("正在创建HTTP连接...", "WebServer");
+        std::cerr << "正在创建HTTP连接: " << listen_addr << std::endl;
+
+        // 检查mg_mgr_是否已初始化
+        std::cerr << "mg_mgr_初始化状态: " << (mg_mgr_.conns ? "已初始化" : "未初始化") << std::endl;
+
         struct mg_connection* nc = mg_http_listen(&mg_mgr_, listen_addr.c_str(), eventHandler, NULL);
         if (nc == nullptr) {
             LOG_ERROR("无法启动Web服务器: " + listen_addr, "WebServer");
+            std::cerr << "无法启动Web服务器: " << listen_addr << ", 错误: " << strerror(errno) << std::endl;
             mg_mgr_free(&mg_mgr_);
             return false;
         }
         LOG_INFO("HTTP连接创建成功", "WebServer");
+        std::cerr << "HTTP连接创建成功" << std::endl;
         nc->fn_data = this;
 
         // 配置SSL
