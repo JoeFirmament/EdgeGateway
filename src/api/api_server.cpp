@@ -5,6 +5,7 @@
 #include "api/camera_api.h"
 #include "camera/camera_manager.h"
 #include "monitor/logger.h"
+#include "system/system_monitor.h"
 #include "utils/time_utils.h"
 
 #include <chrono>
@@ -155,7 +156,7 @@ bool ApiServer::start() {
     // 检查静态文件目录中的文件
     std::cerr << "[API] 静态文件目录内容:" << std::endl;
     std::string cmd = "ls -la " + config_.static_files_dir;
-    system(cmd.c_str());
+    ::system(cmd.c_str());
 
     if (!web_server_->start()) {
         std::lock_guard<std::mutex> lock(status_mutex_);
@@ -399,92 +400,100 @@ void ApiServer::registerApiRoutes() {
         response.status_message = "OK";
         response.content_type = "application/json";
 
+        // 获取系统监控实例
+        auto& system_monitor = system::SystemMonitor::getInstance();
+
         // 获取系统信息
-        std::string hostname;
-        std::string kernel_version;
-        std::string cpu_info;
-        std::string memory_info;
-        std::string disk_info;
+        auto system_info = system_monitor.getSystemInfo();
+        auto cpu_info = system_monitor.getCpuInfo();
+        auto memory_info = system_monitor.getMemoryInfo();
+        auto storage_info = system_monitor.getStorageInfo();
+        auto network_info = system_monitor.getNetworkInfo();
 
-        // 获取主机名
-        FILE* fp = popen("hostname", "r");
-        if (fp) {
-            char buffer[128];
-            if (fgets(buffer, sizeof(buffer), fp) != NULL) {
-                hostname = buffer;
-                // 移除换行符
-                if (!hostname.empty() && hostname[hostname.length()-1] == '\n') {
-                    hostname.erase(hostname.length()-1);
-                }
-            }
-            pclose(fp);
-        }
+        // 格式化内存大小
+        auto formatSize = [](uint64_t size_bytes) -> std::string {
+            const char* units[] = {"B", "KB", "MB", "GB", "TB"};
+            int unit_index = 0;
+            double size = static_cast<double>(size_bytes);
 
-        // 获取内核版本
-        fp = popen("uname -r", "r");
-        if (fp) {
-            char buffer[128];
-            if (fgets(buffer, sizeof(buffer), fp) != NULL) {
-                kernel_version = buffer;
-                // 移除换行符
-                if (!kernel_version.empty() && kernel_version[kernel_version.length()-1] == '\n') {
-                    kernel_version.erase(kernel_version.length()-1);
-                }
+            while (size >= 1024.0 && unit_index < 4) {
+                size /= 1024.0;
+                unit_index++;
             }
-            pclose(fp);
-        }
 
-        // 获取CPU信息
-        fp = popen("cat /proc/cpuinfo | grep 'model name' | head -1 | cut -d':' -f2", "r");
-        if (fp) {
-            char buffer[256];
-            if (fgets(buffer, sizeof(buffer), fp) != NULL) {
-                cpu_info = buffer;
-                // 移除换行符
-                if (!cpu_info.empty() && cpu_info[cpu_info.length()-1] == '\n') {
-                    cpu_info.erase(cpu_info.length()-1);
-                }
-                // 移除前导空格
-                cpu_info.erase(0, cpu_info.find_first_not_of(" \t"));
-            }
-            pclose(fp);
-        }
-
-        // 获取内存信息
-        fp = popen("free -h | grep 'Mem:' | awk '{print $2}'", "r");
-        if (fp) {
-            char buffer[128];
-            if (fgets(buffer, sizeof(buffer), fp) != NULL) {
-                memory_info = buffer;
-                // 移除换行符
-                if (!memory_info.empty() && memory_info[memory_info.length()-1] == '\n') {
-                    memory_info.erase(memory_info.length()-1);
-                }
-            }
-            pclose(fp);
-        }
-
-        // 获取磁盘信息
-        fp = popen("df -h / | grep / | awk '{print $2}'", "r");
-        if (fp) {
-            char buffer[128];
-            if (fgets(buffer, sizeof(buffer), fp) != NULL) {
-                disk_info = buffer;
-                // 移除换行符
-                if (!disk_info.empty() && disk_info[disk_info.length()-1] == '\n') {
-                    disk_info.erase(disk_info.length()-1);
-                }
-            }
-            pclose(fp);
-        }
+            std::ostringstream ss;
+            ss << std::fixed << std::setprecision(1) << size << units[unit_index];
+            return ss.str();
+        };
 
         // 构建JSON响应
         response.body = "{\n";
-        response.body += "  \"hostname\": \"" + hostname + "\",\n";
-        response.body += "  \"kernel_version\": \"" + kernel_version + "\",\n";
-        response.body += "  \"cpu_info\": \"" + cpu_info + "\",\n";
-        response.body += "  \"memory_total\": \"" + memory_info + "\",\n";
-        response.body += "  \"disk_total\": \"" + disk_info + "\",\n";
+
+        // 基本信息
+        response.body += "  \"hostname\": \"" + system_info.hostname + "\",\n";
+        response.body += "  \"kernel_version\": \"" + system_info.kernel_version + "\",\n";
+        response.body += "  \"os_version\": \"" + system_info.os_version + "\",\n";
+        response.body += "  \"uptime\": \"" + system_info.uptime + "\",\n";
+        response.body += "  \"system_time\": \"" + system_info.system_time + "\",\n";
+
+        // CPU信息
+        response.body += "  \"cpu_info\": \"" + (cpu_info.core_count > 0 ? "RK3588 (" + std::to_string(cpu_info.core_count) + " cores)" : "RK3588") + "\",\n";
+        response.body += "  \"cpu_usage\": " + std::to_string(static_cast<int>(cpu_info.usage_percent)) + ",\n";
+        response.body += "  \"cpu_temperature\": " + std::to_string(static_cast<int>(cpu_info.temperature)) + ",\n";
+
+        // 内存信息
+        response.body += "  \"memory_total\": \"" + formatSize(memory_info.total) + "\",\n";
+        response.body += "  \"memory_used\": \"" + formatSize(memory_info.used) + "\",\n";
+        response.body += "  \"memory_free\": \"" + formatSize(memory_info.free) + "\",\n";
+        response.body += "  \"memory_usage\": " + std::to_string(static_cast<int>(memory_info.usage_percent)) + ",\n";
+
+        // 磁盘信息
+        if (!storage_info.empty()) {
+            response.body += "  \"disk_total\": \"" + formatSize(storage_info[0].total) + "\",\n";
+            response.body += "  \"disk_used\": \"" + formatSize(storage_info[0].used) + "\",\n";
+            response.body += "  \"disk_free\": \"" + formatSize(storage_info[0].free) + "\",\n";
+            response.body += "  \"disk_usage\": " + std::to_string(static_cast<int>(storage_info[0].usage_percent)) + ",\n";
+        } else {
+            response.body += "  \"disk_total\": \"Unknown\",\n";
+            response.body += "  \"disk_used\": \"Unknown\",\n";
+            response.body += "  \"disk_free\": \"Unknown\",\n";
+            response.body += "  \"disk_usage\": 0,\n";
+        }
+
+        // 获取WiFi SSID
+        std::string wifi_ssid = "-";
+        FILE* fp = popen("iwgetid -r", "r");
+        if (fp) {
+            char buffer[128];
+            if (fgets(buffer, sizeof(buffer), fp) != NULL) {
+                wifi_ssid = buffer;
+                // 移除换行符
+                if (!wifi_ssid.empty() && wifi_ssid[wifi_ssid.length()-1] == '\n') {
+                    wifi_ssid.erase(wifi_ssid.length()-1);
+                }
+            }
+            pclose(fp);
+        }
+
+        // 添加WiFi SSID到响应
+        response.body += "  \"wifi_ssid\": \"" + wifi_ssid + "\",\n";
+
+        // 网络信息
+        response.body += "  \"network\": [";
+        for (size_t i = 0; i < network_info.size(); i++) {
+            if (i > 0) {
+                response.body += ",";
+            }
+            response.body += "\n    {\n";
+            response.body += "      \"interface\": \"" + network_info[i].interface + "\",\n";
+            response.body += "      \"ip_address\": \"" + network_info[i].ip_address + "\",\n";
+            response.body += "      \"rx_rate\": " + std::to_string(static_cast<int>(network_info[i].rx_rate)) + ",\n";
+            response.body += "      \"tx_rate\": " + std::to_string(static_cast<int>(network_info[i].tx_rate)) + "\n";
+            response.body += "    }";
+        }
+        response.body += "\n  ],\n";
+
+        // 服务器信息
         response.body += "  \"server_version\": \"0.1.0\",\n";
         response.body += "  \"server_uptime\": \"" + std::to_string(utils::TimeUtils::getCurrentTimeMillis() - ApiServer::getInstance().getStatus().start_time) + " ms\"\n";
         response.body += "}";

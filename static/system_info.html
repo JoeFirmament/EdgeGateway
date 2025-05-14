@@ -45,6 +45,10 @@
                                 <td id="cpu-info">-</td>
                             </tr>
                             <tr>
+                                <td>CPU温度:</td>
+                                <td id="cpu-temperature">-</td>
+                            </tr>
+                            <tr>
                                 <td>运行时间:</td>
                                 <td id="uptime">-</td>
                             </tr>
@@ -109,6 +113,24 @@
                     </div>
 
                     <div class="card">
+                        <h3>网络信息</h3>
+                        <table class="info-table">
+                            <tr>
+                                <td>IP地址:</td>
+                                <td id="ip-address">-</td>
+                            </tr>
+                            <tr>
+                                <td>WiFi SSID:</td>
+                                <td id="wifi-ssid">-</td>
+                            </tr>
+                            <tr>
+                                <td>网络接口:</td>
+                                <td id="network-interfaces">-</td>
+                            </tr>
+                        </table>
+                    </div>
+
+                    <div class="card">
                         <h3>服务器状态</h3>
                         <table class="info-table">
                             <tr>
@@ -166,12 +188,89 @@
                         document.getElementById('hostname').textContent = data.hostname || '-';
                         document.getElementById('kernel-version').textContent = data.kernel_version || '-';
                         document.getElementById('cpu-info').textContent = data.cpu_info || 'RK3588';
+                        document.getElementById('cpu-temperature').textContent = data.cpu_temperature ? `${data.cpu_temperature}°C` : '-';
+                        document.getElementById('uptime').textContent = data.uptime || '-';
 
-                        // 更新内存信息
+                        // 更新网络信息
+                        let ipAddress = '-';
+                        let wifiSsid = '-';
+                        let networkInterfaces = '';
+
+                        if (data.network && data.network.length > 0) {
+                            // 查找WiFi接口
+                            const wifiInterface = data.network.find(net => net.interface.startsWith('wl'));
+                            if (wifiInterface) {
+                                ipAddress = wifiInterface.ip_address;
+                                wifiSsid = data.wifi_ssid || '-';
+                            } else if (data.network[0]) {
+                                // 如果没有WiFi接口，使用第一个接口的IP
+                                ipAddress = data.network[0].ip_address;
+                            }
+
+                            // 构建网络接口列表
+                            networkInterfaces = data.network.map(net =>
+                                `${net.interface}: ${net.ip_address}`
+                            ).join('<br>');
+                        }
+
+                        document.getElementById('ip-address').textContent = ipAddress;
+                        document.getElementById('wifi-ssid').textContent = wifiSsid;
+                        document.getElementById('network-interfaces').innerHTML = networkInterfaces;
+
+                        // 更新CPU使用率
+                        const cpuUsage = data.cpu_usage || 0;
+                        const cpuUsageBar = document.getElementById('cpu-usage-bar');
+                        cpuUsageBar.style.width = `${cpuUsage}%`;
+                        cpuUsageBar.textContent = `${cpuUsage}%`;
+
+                        // 根据使用率设置颜色
+                        if (cpuUsage < 50) {
+                            cpuUsageBar.className = 'progress-bar progress-bar-success';
+                        } else if (cpuUsage < 80) {
+                            cpuUsageBar.className = 'progress-bar progress-bar-warning';
+                        } else {
+                            cpuUsageBar.className = 'progress-bar progress-bar-danger';
+                        }
+
+                        // 更新内存使用率
+                        const memoryUsage = data.memory_usage || 0;
+                        const memoryUsageBar = document.getElementById('memory-usage-bar');
+                        memoryUsageBar.style.width = `${memoryUsage}%`;
+                        memoryUsageBar.textContent = `${memoryUsage}%`;
+
+                        // 根据使用率设置颜色
+                        if (memoryUsage < 50) {
+                            memoryUsageBar.className = 'progress-bar progress-bar-success';
+                        } else if (memoryUsage < 80) {
+                            memoryUsageBar.className = 'progress-bar progress-bar-warning';
+                        } else {
+                            memoryUsageBar.className = 'progress-bar progress-bar-danger';
+                        }
+
+                        // 更新内存详情
                         document.getElementById('memory-total').textContent = data.memory_total || '-';
+                        document.getElementById('memory-used').textContent = data.memory_used || '-';
+                        document.getElementById('memory-free').textContent = data.memory_free || '-';
 
-                        // 更新磁盘信息
+                        // 更新磁盘使用率
+                        const diskUsage = data.disk_usage || 0;
+                        const diskUsageBar = document.getElementById('disk-usage-bar');
+                        diskUsageBar.style.width = `${diskUsage}%`;
+                        diskUsageBar.textContent = `${diskUsage}%`;
+
+                        // 根据使用率设置颜色
+                        if (diskUsage < 50) {
+                            diskUsageBar.className = 'progress-bar progress-bar-success';
+                        } else if (diskUsage < 80) {
+                            diskUsageBar.className = 'progress-bar progress-bar-warning';
+                        } else {
+                            diskUsageBar.className = 'progress-bar progress-bar-danger';
+                        }
+
+                        // 更新磁盘详情
                         document.getElementById('disk-total').textContent = data.disk_total || '-';
+                        document.getElementById('disk-used').textContent = data.disk_used || '-';
+                        document.getElementById('disk-free').textContent = data.disk_free || '-';
 
                         // 更新服务器信息
                         document.getElementById('server-version').textContent = data.server_version || '-';
@@ -182,9 +281,6 @@
                         const minutes = Math.floor((uptime % (1000 * 60 * 60)) / (1000 * 60));
                         const seconds = Math.floor((uptime % (1000 * 60)) / 1000);
                         document.getElementById('server-uptime').textContent = `${hours}小时 ${minutes}分钟 ${seconds}秒`;
-
-                        // 模拟CPU和内存使用率（实际应该从API获取）
-                        simulateResourceUsage();
                     })
                     .catch(error => {
                         console.error('Error:', error);
@@ -194,71 +290,7 @@
                     });
             }
 
-            // 模拟资源使用情况（实际应该从API获取）
-            function simulateResourceUsage() {
-                // 模拟CPU使用率
-                const cpuUsage = Math.floor(Math.random() * 100);
-                const cpuUsageBar = document.getElementById('cpu-usage-bar');
-                cpuUsageBar.style.width = `${cpuUsage}%`;
-                cpuUsageBar.textContent = `${cpuUsage}%`;
-
-                // 根据使用率设置颜色
-                if (cpuUsage < 50) {
-                    cpuUsageBar.className = 'progress-bar progress-bar-success';
-                } else if (cpuUsage < 80) {
-                    cpuUsageBar.className = 'progress-bar progress-bar-warning';
-                } else {
-                    cpuUsageBar.className = 'progress-bar progress-bar-danger';
-                }
-
-                // 模拟内存使用率
-                const memoryUsage = Math.floor(Math.random() * 100);
-                const memoryUsageBar = document.getElementById('memory-usage-bar');
-                memoryUsageBar.style.width = `${memoryUsage}%`;
-                memoryUsageBar.textContent = `${memoryUsage}%`;
-
-                // 根据使用率设置颜色
-                if (memoryUsage < 50) {
-                    memoryUsageBar.className = 'progress-bar progress-bar-success';
-                } else if (memoryUsage < 80) {
-                    memoryUsageBar.className = 'progress-bar progress-bar-warning';
-                } else {
-                    memoryUsageBar.className = 'progress-bar progress-bar-danger';
-                }
-
-                // 模拟内存详情
-                const memoryTotal = '7.7Gi';
-                const memoryUsed = `${(7.7 * memoryUsage / 100).toFixed(1)}Gi`;
-                const memoryFree = `${(7.7 - 7.7 * memoryUsage / 100).toFixed(1)}Gi`;
-
-                document.getElementById('memory-total').textContent = memoryTotal;
-                document.getElementById('memory-used').textContent = memoryUsed;
-                document.getElementById('memory-free').textContent = memoryFree;
-
-                // 模拟磁盘使用率
-                const diskUsage = Math.floor(Math.random() * 100);
-                const diskUsageBar = document.getElementById('disk-usage-bar');
-                diskUsageBar.style.width = `${diskUsage}%`;
-                diskUsageBar.textContent = `${diskUsage}%`;
-
-                // 根据使用率设置颜色
-                if (diskUsage < 50) {
-                    diskUsageBar.className = 'progress-bar progress-bar-success';
-                } else if (diskUsage < 80) {
-                    diskUsageBar.className = 'progress-bar progress-bar-warning';
-                } else {
-                    diskUsageBar.className = 'progress-bar progress-bar-danger';
-                }
-
-                // 模拟磁盘详情
-                const diskTotal = '57G';
-                const diskUsed = `${(57 * diskUsage / 100).toFixed(1)}G`;
-                const diskFree = `${(57 - 57 * diskUsage / 100).toFixed(1)}G`;
-
-                document.getElementById('disk-total').textContent = diskTotal;
-                document.getElementById('disk-used').textContent = diskUsed;
-                document.getElementById('disk-free').textContent = diskFree;
-            }
+            // 此函数已被移除，现在使用API返回的真实数据
         });
     </script>
 </body>
