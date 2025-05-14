@@ -7,6 +7,7 @@
 #include <filesystem>
 #include <fstream>
 #include <sstream>
+#include <iostream>
 #include <dirent.h>
 #include <sys/stat.h>
 
@@ -38,20 +39,31 @@ FileManager::FileManager()
 }
 
 bool FileManager::initialize(const std::string& base_dir) {
+    std::cerr << "[FILE][file_manager.cpp:initialize] 开始, 基础目录: " << base_dir << std::endl;
     std::lock_guard<std::mutex> lock(mutex_);
+    std::cerr << "[FILE][file_manager.cpp:initialize] 获取互斥锁成功" << std::endl;
 
     // 规范化基础目录路径
+    std::cerr << "[FILE][file_manager.cpp:initialize] 正在规范化基础目录路径..." << std::endl;
     base_dir_ = normalizePath(base_dir);
+    std::cerr << "[FILE][file_manager.cpp:initialize] 规范化后的基础目录路径: " << base_dir_ << std::endl;
 
     // 确保基础目录存在
+    std::cerr << "[FILE][file_manager.cpp:initialize] 检查基础目录是否存在..." << std::endl;
     if (!utils::FileUtils::directoryExists(base_dir_)) {
+        std::cerr << "[FILE][file_manager.cpp:initialize] 基础目录不存在，尝试创建..." << std::endl;
         if (!utils::FileUtils::createDirectory(base_dir_, true)) {
+            std::cerr << "[FILE][file_manager.cpp:initialize] 无法创建基础目录: " << base_dir_ << std::endl;
             LOG_ERROR("无法创建基础目录: " + base_dir_, "FileManager");
             return false;
         }
+        std::cerr << "[FILE][file_manager.cpp:initialize] 基础目录创建成功" << std::endl;
+    } else {
+        std::cerr << "[FILE][file_manager.cpp:initialize] 基础目录已存在" << std::endl;
     }
 
     is_initialized_ = true;
+    std::cerr << "[FILE][file_manager.cpp:initialize] 成功" << std::endl;
     LOG_INFO("文件管理器初始化成功，基础目录: " + base_dir_, "FileManager");
     return true;
 }
@@ -454,12 +466,19 @@ std::string FileManager::getBaseDir() const {
 }
 
 std::string FileManager::normalizePath(const std::string& path) const {
+    std::cerr << "[FILE][file_manager.cpp:normalizePath] 开始, 路径: " << path << std::endl;
+
     // 如果路径是相对路径，则相对于基础目录
     if (!path.empty() && path[0] != '/') {
-        return utils::FileUtils::joinPath(base_dir_, path);
+        std::cerr << "[FILE][file_manager.cpp:normalizePath] 路径是相对路径，相对于基础目录: " << base_dir_ << std::endl;
+        std::string result = utils::FileUtils::joinPath(base_dir_, path);
+        std::cerr << "[FILE][file_manager.cpp:normalizePath] 规范化后的路径: " << result << std::endl;
+        return result;
     }
 
-    return utils::FileUtils::normalizePath(path);
+    std::string result = utils::FileUtils::normalizePath(path);
+    std::cerr << "[FILE][file_manager.cpp:normalizePath] 规范化后的路径: " << result << std::endl;
+    return result;
 }
 
 FileType FileManager::getFileType(const std::string& file_path) const {
