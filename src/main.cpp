@@ -18,6 +18,7 @@
 #include "monitor/logger.h"
 #include "system/system_monitor.h"
 #include "utils/config_manager.h"
+#include "utils/debug_utils.h"
 
 using namespace cam_server;
 
@@ -121,21 +122,30 @@ bool initialize_logger(const std::string& log_level) {
     monitor::LoggerConfig config;
     config.log_file = "logs/cam_server.log";
 
-    // 设置日志级别
+    // 设置Logger日志级别
+    utils::LogLevel debug_level = utils::LogLevel::INFO;
+
     if (log_level == "trace") {
         config.min_level = monitor::LogLevel::TRACE;
+        debug_level = utils::LogLevel::TRACE;
     } else if (log_level == "debug") {
         config.min_level = monitor::LogLevel::DEBUG;
+        debug_level = utils::LogLevel::DEBUG;
     } else if (log_level == "info") {
         config.min_level = monitor::LogLevel::INFO;
+        debug_level = utils::LogLevel::INFO;
     } else if (log_level == "warning") {
         config.min_level = monitor::LogLevel::WARNING;
+        debug_level = utils::LogLevel::WARN;
     } else if (log_level == "error") {
         config.min_level = monitor::LogLevel::ERROR;
+        debug_level = utils::LogLevel::ERROR;
     } else if (log_level == "critical") {
         config.min_level = monitor::LogLevel::CRITICAL;
+        debug_level = utils::LogLevel::FATAL;
     } else {
         config.min_level = monitor::LogLevel::INFO;
+        debug_level = utils::LogLevel::INFO;
     }
 
     config.console_output = true;
@@ -151,12 +161,63 @@ bool initialize_logger(const std::string& log_level) {
     config.async_logging = true;
     config.async_queue_size = 1000;
 
-    return monitor::Logger::getInstance().initialize(config);
+    // 初始化Logger
+    bool result = monitor::Logger::getInstance().initialize(config);
+
+    // 设置DebugUtils日志级别
+    utils::DebugUtils::setGlobalLogLevel(debug_level);
+
+    // 设置各模块的日志级别
+    utils::DebugUtils::setModuleLogLevel("MAIN", debug_level);
+    utils::DebugUtils::setModuleLogLevel("CONFIG", utils::LogLevel::INFO);
+    utils::DebugUtils::setModuleLogLevel("STORAGE", utils::LogLevel::INFO);
+    utils::DebugUtils::setModuleLogLevel("FILE", utils::LogLevel::INFO);
+    utils::DebugUtils::setModuleLogLevel("CAMERA", utils::LogLevel::INFO);
+    utils::DebugUtils::setModuleLogLevel("V4L2", utils::LogLevel::INFO);
+    utils::DebugUtils::setModuleLogLevel("API", utils::LogLevel::INFO);
+    utils::DebugUtils::setModuleLogLevel("WEB", utils::LogLevel::INFO);
+    utils::DebugUtils::setModuleLogLevel("SYSTEM", utils::LogLevel::INFO);
+    utils::DebugUtils::setModuleLogLevel("VIDEO", utils::LogLevel::INFO);
+    utils::DebugUtils::setModuleLogLevel("UTILS", utils::LogLevel::INFO);
+
+    return result;
 }
 
 // 初始化配置管理器
 bool initialize_config(const std::string& config_path) {
-    return utils::ConfigManager::getInstance().initialize(config_path);
+    std::cerr << "========== 开始初始化配置管理器 ==========" << std::endl;
+    std::cerr << "配置文件路径: " << config_path << std::endl;
+
+    // 检查配置文件是否存在
+    struct stat st;
+    if (stat(config_path.c_str(), &st) != 0) {
+        std::cerr << "错误: 配置文件不存在: " << config_path << std::endl;
+        std::cerr << "========== 配置管理器初始化失败 ==========" << std::endl;
+        return false;
+    }
+
+    std::cerr << "配置文件检查成功，大小: " << st.st_size << " 字节" << std::endl;
+
+    // 尝试初始化配置管理器
+    auto& config_manager = utils::ConfigManager::getInstance();
+    std::cerr << "正在调用ConfigManager::initialize()..." << std::endl;
+    bool result = config_manager.initialize(config_path);
+
+    if (result) {
+        std::cerr << "配置管理器初始化成功!" << std::endl;
+
+        // 打印一些关键配置项，验证配置是否正确加载
+        std::cerr << "验证关键配置项:" << std::endl;
+        std::cerr << "  API地址: " << config_manager.getString("api.address", "未设置") << std::endl;
+        std::cerr << "  API端口: " << config_manager.getInt("api.port", -1) << std::endl;
+        std::cerr << "  静态文件目录: " << config_manager.getString("api.static_files_dir", "未设置") << std::endl;
+        std::cerr << "  摄像头设备: " << config_manager.getString("camera.device", "未设置") << std::endl;
+    } else {
+        std::cerr << "错误: 配置管理器初始化失败!" << std::endl;
+    }
+
+    std::cerr << "========== 配置管理器初始化" << (result ? "成功" : "失败") << " ==========" << std::endl;
+    return result;
 }
 
 // 初始化存储管理器
@@ -188,8 +249,12 @@ bool initialize_storage(const std::string& output_dir) {
 
 // 初始化文件管理器
 bool initialize_file_manager() {
+    LOG_INFO("初始化文件管理器开始", "Main");
     auto& storage_manager = storage::StorageManager::getInstance();
-    return storage::FileManager::getInstance().initialize(storage_manager.getVideoDir());
+    LOG_INFO("获取视频目录: " + storage_manager.getVideoDir(), "Main");
+    bool result = storage::FileManager::getInstance().initialize(storage_manager.getVideoDir());
+    LOG_INFO("文件管理器初始化结果: " + std::string(result ? "成功" : "失败"), "Main");
+    return result;
 }
 
 // 初始化摄像头管理器
@@ -211,17 +276,27 @@ bool initialize_camera_manager(const std::string& device_path, const std::string
 
     // 初始化摄像头管理器
     auto& camera_manager = camera::CameraManager::getInstance();
-    if (!camera_manager.initialize("config/camera.json")) {
+    // 使用主配置文件，不需要单独的摄像头配置文件
+    std::string config_path = "/home/orangepi/Qworkspace/cam_server_cpp/config/config.json";
+    LOG_INFO("使用配置文件: " + config_path, "Main");
+    if (!camera_manager.initialize(config_path)) {
         return false;
     }
 
     // 打开摄像头设备
-    return camera_manager.openDevice(device, width, height, frame_rate);
+    LOG_INFO("正在打开摄像头设备: " + device + ", 分辨率: " + std::to_string(width) + "x" + std::to_string(height) + ", 帧率: " + std::to_string(frame_rate), "Main");
+
+    bool result = camera_manager.openDevice(device, width, height, frame_rate);
+
+    LOG_INFO("打开摄像头设备结果: " + std::string(result ? "成功" : "失败"), "Main");
+
+    return result;
 }
 
 // 初始化API服务器
 bool initialize_api_server() {
     LOG_INFO("正在初始化API服务器...", "Main");
+    DEBUG_INFO("MAIN", "正在初始化API服务器...");
     auto& config = utils::ConfigManager::getInstance();
 
     api::ApiServerConfig api_config;
@@ -239,6 +314,8 @@ bool initialize_api_server() {
 
     LOG_INFO("API服务器配置: 地址=" + api_config.address + ", 端口=" + std::to_string(api_config.port) +
              ", 静态文件目录=" + api_config.static_files_dir, "Main");
+    DEBUG_INFO("MAIN", "API服务器配置: 地址=" + api_config.address + ", 端口=" + std::to_string(api_config.port) +
+             ", 静态文件目录=" + api_config.static_files_dir);
 
     // 检查静态文件目录是否存在
     struct stat st;
@@ -281,7 +358,7 @@ int main(int argc, char* argv[]) {
     print_welcome();
 
     // 解析命令行参数
-    std::string config_path = "config/config.json";
+    std::string config_path = "/home/orangepi/Qworkspace/cam_server_cpp/config/config.json";
     std::string device_path;
     std::string resolution;
     int fps = 0;
@@ -300,39 +377,55 @@ int main(int argc, char* argv[]) {
         }
 
         LOG_INFO("摄像头服务器启动中...", "Main");
+        LOG_INFO("正在初始化配置管理器...", "Main");
+
+        // 添加一个延迟，以便我们可以看到更多的调试输出
+        LOG_INFO("等待5秒钟...", "Main");
+        for (int i = 5; i > 0; --i) {
+            LOG_INFO(std::to_string(i) + "...", "Main");
+            std::this_thread::sleep_for(std::chrono::seconds(1));
+        }
+        LOG_INFO("开始初始化配置管理器", "Main");
 
         // 初始化配置管理器
         if (!initialize_config(config_path)) {
             LOG_ERROR("初始化配置管理器失败", "Main");
             return 1;
         }
+        LOG_INFO("配置管理器初始化成功", "Main");
 
         // 初始化存储管理器
+        LOG_INFO("正在初始化存储管理器...", "Main");
         if (!initialize_storage(output_dir)) {
             LOG_ERROR("初始化存储管理器失败", "Main");
             return 1;
         }
+        LOG_INFO("存储管理器初始化成功", "Main");
 
         // 初始化文件管理器
+        LOG_INFO("正在初始化文件管理器...", "Main");
         if (!initialize_file_manager()) {
             LOG_ERROR("初始化文件管理器失败", "Main");
             return 1;
         }
+        LOG_INFO("文件管理器初始化成功", "Main");
 
         // 初始化摄像头管理器
+        LOG_INFO("正在初始化摄像头管理器...", "Main");
         if (!initialize_camera_manager(device_path, resolution, fps)) {
-            LOG_ERROR("初始化摄像头管理器失败", "Main");
-            return 1;
+            LOG_WARNING("初始化摄像头管理器失败，但将继续运行以测试Web界面", "Main");
+            // 不返回错误，继续运行
+        } else {
+            LOG_INFO("摄像头管理器初始化成功", "Main");
         }
 
         // 初始化API服务器
-        std::cerr << "正在初始化API服务器..." << std::endl;
+        LOG_INFO("正在初始化API服务器...", "Main");
         if (!initialize_api_server()) {
             LOG_ERROR("初始化API服务器失败", "Main");
-            std::cerr << "初始化API服务器失败" << std::endl;
             return 1;
         }
-        std::cerr << "API服务器初始化成功" << std::endl;
+        LOG_INFO("API服务器初始化成功", "Main");
 
         // 初始化系统监控器
         if (!initialize_system_monitor()) {
@@ -341,10 +434,23 @@ int main(int argc, char* argv[]) {
         }
 
         // 启动API服务器
+        LOG_INFO("正在启动API服务器...", "Main");
         if (!api::ApiServer::getInstance().start()) {
             LOG_ERROR("启动API服务器失败", "Main");
             return 1;
         }
+        LOG_INFO("API服务器启动成功", "Main");
+
+        // 检查API服务器状态
+        auto status = api::ApiServer::getInstance().getStatus();
+        std::string state_str =
+            (status.state == api::ApiServerState::RUNNING ? "运行中" :
+             status.state == api::ApiServerState::STOPPED ? "已停止" :
+             status.state == api::ApiServerState::STARTING ? "正在启动" :
+             status.state == api::ApiServerState::STOPPING ? "正在停止" :
+             status.state == api::ApiServerState::ERROR ? "错误" : "未知");
+        LOG_INFO("API服务器状态: " + state_str, "Main");
+        LOG_INFO("API服务器地址: " + status.address + ":" + std::to_string(status.port), "Main");
 
         // 启动系统监控器
         if (!system::SystemMonitor::getInstance().start()) {
