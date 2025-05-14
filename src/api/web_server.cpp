@@ -1,5 +1,7 @@
 #include "api/web_server.h"
 #include "monitor/logger.h"
+#include "utils/file_utils.h"  // 添加FileUtils头文件
+#include "utils/debug_utils.h"  // 添加DebugUtils头文件
 
 #include <cstring>
 #include <sstream>
@@ -32,8 +34,13 @@ public:
     }
 
     bool initialize(const WebServerConfig& config, std::shared_ptr<RestHandler> rest_handler) {
+        std::cerr << "[WEB][web_server.cpp:Impl::initialize] 开始初始化Web服务器实现..." << std::endl;
+
+        std::cerr << "[WEB][web_server.cpp:Impl::initialize] 设置配置..." << std::endl;
         config_ = config;
         rest_handler_ = rest_handler;
+
+        std::cerr << "[WEB][web_server.cpp:Impl::initialize] Web服务器实现初始化成功" << std::endl;
         return true;
     }
 
@@ -77,20 +84,122 @@ public:
 
         // 创建HTTP连接
         LOG_INFO("正在创建HTTP连接...", "WebServer");
-        std::cerr << "正在创建HTTP连接: " << listen_addr << std::endl;
+        LOG_DEBUG_FULL("WEB", "正在创建HTTP连接: " + listen_addr);
 
         // 检查mg_mgr_是否已初始化
-        std::cerr << "mg_mgr_初始化状态: " << (mg_mgr_.conns ? "已初始化" : "未初始化") << std::endl;
+        LOG_DEBUG_FULL("WEB", "mg_mgr_初始化状态: " + std::string(mg_mgr_.conns ? "已初始化" : "未初始化"));
 
-        struct mg_connection* nc = mg_http_listen(&mg_mgr_, listen_addr.c_str(), eventHandler, NULL);
+        // 检查端口是否已被占用
+        LOG_DEBUG_FULL("WEB", "检查端口是否已被占用...");
+        std::string check_cmd = "netstat -tuln | grep " + std::to_string(config_.port);
+        int check_result = ::system(check_cmd.c_str());
+        LOG_DEBUG_FULL("WEB", "端口检查结果: " + std::to_string(check_result));
+
+        // 尝试创建HTTP连接
+        LOG_DEBUG_FULL("WEB", "尝试调用mg_http_listen...");
+        LOG_DEBUG_FULL("WEB", "监听地址: " + listen_addr);
+        LOG_DEBUG_FULL("WEB", "当前工作目录: " + utils::FileUtils::getCurrentWorkingDirectory());
+
+        // 检查mongoose.h是否存在
+        LOG_DEBUG_FULL("WEB", "检查mongoose.h是否存在...");
+        if (utils::FileUtils::fileExists("mongoose.h")) {
+            LOG_DEBUG_FULL("WEB", "mongoose.h存在");
+        } else {
+            LOG_DEBUG_FULL("WEB", "mongoose.h不存在");
+        }
+
+        struct mg_connection* nc = nullptr;
+        try {
+            LOG_DEBUG_FULL("WEB", "调用mg_http_listen前...");
+
+            // 打印更多调试信息
+            LOG_DEBUG_FULL("WEB", "mg_mgr_地址: " + std::to_string(reinterpret_cast<uintptr_t>(&mg_mgr_)));
+            LOG_DEBUG_FULL("WEB", "listen_addr: " + listen_addr);
+            LOG_DEBUG_FULL("WEB", "eventHandler地址: " + std::to_string(reinterpret_cast<uintptr_t>(reinterpret_cast<void*>(eventHandler))));
+
+            // 尝试使用不同的方式调用mg_http_listen
+            LOG_DEBUG_FULL("WEB", "尝试使用不同的方式调用mg_http_listen...");
+
+            // 方式1：使用原始方式
+            nc = mg_http_listen(&mg_mgr_, listen_addr.c_str(), eventHandler, NULL);
+            LOG_DEBUG_FULL("WEB", "调用mg_http_listen后，结果: " + std::string(nc ? "成功" : "失败"));
+
+            if (nc == nullptr) {
+                // 方式2：尝试使用不同的端口
+                std::string alt_addr = "http://0.0.0.0:8081";
+                LOG_DEBUG_FULL("WEB", "尝试使用替代地址: " + alt_addr);
+                nc = mg_http_listen(&mg_mgr_, alt_addr.c_str(), eventHandler, NULL);
+                LOG_DEBUG_FULL("WEB", "使用替代地址调用mg_http_listen后，结果: " + std::string(nc ? "成功" : "失败"));
+
+                if (nc != nullptr) {
+                    LOG_DEBUG_FULL("WEB", "使用替代地址成功");
+                    config_.port = 8081;
+                    listen_addr = alt_addr;
+                }
+            }
+        } catch (const std::exception& e) {
+            LOG_DEBUG_FULL("WEB", "mg_http_listen抛出异常: " + std::string(e.what()));
+        } catch (...) {
+            LOG_DEBUG_FULL("WEB", "mg_http_listen抛出未知异常");
+        }
+
         if (nc == nullptr) {
             LOG_ERROR("无法启动Web服务器: " + listen_addr, "WebServer");
-            std::cerr << "无法启动Web服务器: " << listen_addr << ", 错误: " << strerror(errno) << std::endl;
-            mg_mgr_free(&mg_mgr_);
-            return false;
+            LOG_DEBUG_FULL("WEB", "无法启动Web服务器: " + listen_addr + ", 错误: " + std::string(strerror(errno)));
+            LOG_DEBUG_FULL("WEB", "错误码: " + std::to_string(errno));
+
+            // 检查常见的错误
+            if (errno == EADDRINUSE) {
+                LOG_DEBUG_FULL("WEB", "错误: 地址已被使用");
+            } else if (errno == EACCES) {
+                LOG_DEBUG_FULL("WEB", "错误: 权限不足");
+            } else if (errno == EADDRNOTAVAIL) {
+                LOG_DEBUG_FULL("WEB", "错误: 地址不可用");
+            }
+
+            // 检查端口是否已被占用
+            LOG_DEBUG_FULL("WEB", "再次检查端口是否已被占用...");
+            std::string check_cmd = "netstat -tuln | grep " + std::to_string(config_.port);
+            int check_result = ::system(check_cmd.c_str());
+            LOG_DEBUG_FULL("WEB", "端口检查结果: " + std::to_string(check_result));
+
+            // 尝试使用不同的端口
+            LOG_DEBUG_FULL("WEB", "尝试使用不同的端口...");
+            int alt_port = config_.port + 1;
+            std::string alt_listen_addr;
+            if (config_.use_https) {
+                alt_listen_addr = "https://" + config_.address + ":" + std::to_string(alt_port);
+            } else {
+                alt_listen_addr = "http://" + config_.address + ":" + std::to_string(alt_port);
+            }
+            LOG_DEBUG_FULL("WEB", "尝试替代地址: " + alt_listen_addr);
+
+            try {
+                LOG_DEBUG_FULL("WEB", "尝试调用mg_http_listen使用替代端口...");
+                nc = mg_http_listen(&mg_mgr_, alt_listen_addr.c_str(), eventHandler, NULL);
+                LOG_DEBUG_FULL("WEB", "调用mg_http_listen后，结果: " + std::string(nc ? "成功" : "失败"));
+
+                if (nc != nullptr) {
+                    LOG_DEBUG_FULL("WEB", "使用替代端口成功: " + std::to_string(alt_port));
+                    config_.port = alt_port;
+                    listen_addr = alt_listen_addr;
+                } else {
+                    LOG_DEBUG_FULL("WEB", "使用替代端口失败: " + std::to_string(alt_port) + ", 错误: " + std::string(strerror(errno)));
+                    LOG_DEBUG_FULL("WEB", "错误码: " + std::to_string(errno));
+                }
+            } catch (const std::exception& e) {
+                LOG_DEBUG_FULL("WEB", "尝试替代端口时抛出异常: " + std::string(e.what()));
+            } catch (...) {
+                LOG_DEBUG_FULL("WEB", "尝试替代端口时抛出未知异常");
+            }
+
+            if (nc == nullptr) {
+                mg_mgr_free(&mg_mgr_);
+                return false;
+            }
         }
         LOG_INFO("HTTP连接创建成功", "WebServer");
-        std::cerr << "HTTP连接创建成功" << std::endl;
+        std::cerr << "[WEB] HTTP连接创建成功" << std::endl;
         nc->fn_data = this;
 
         // 配置SSL
@@ -163,26 +272,42 @@ public:
         // 增加请求计数
         server_->request_count_++;
 
+        LOG_DEBUG_FULL("WEB", "收到HTTP请求: " + std::string(hm->method.buf, hm->method.len) + " " +
+                      std::string(hm->uri.buf, hm->uri.len));
+
         // 解析请求
         HttpRequest request;
         parseHttpRequest(hm, request);
 
+        LOG_DEBUG_FULL("WEB", "解析后的请求: 方法=" + request.method + ", 路径=" + request.path);
+
         // 检查是否是静态文件请求
+        LOG_DEBUG_FULL("WEB", "检查是否是静态文件请求...");
         if (handleStaticFileRequest(nc, hm, request)) {
+            LOG_DEBUG_FULL("WEB", "已处理静态文件请求: " + request.path);
             return;
         }
+
+        LOG_DEBUG_FULL("WEB", "不是静态文件请求，尝试处理REST请求: " + request.path);
 
         // 处理REST请求
         HttpResponse response = rest_handler_->handleRequest(request);
 
+        LOG_DEBUG_FULL("WEB", "REST请求处理结果: 状态码=" + std::to_string(response.status_code) +
+                      ", 内容类型=" + response.content_type +
+                      ", 是否流式=" + (response.is_streaming ? "是" : "否"));
+
         // 处理流式响应
         if (response.is_streaming) {
+            LOG_DEBUG_FULL("WEB", "处理流式响应...");
             handleStreamingResponse(nc, response);
             return;
         }
 
         // 发送响应
+        LOG_DEBUG_FULL("WEB", "发送HTTP响应...");
         sendHttpResponse(nc, response);
+        LOG_DEBUG_FULL("WEB", "HTTP响应已发送");
     }
 
     // 解析HTTP请求
@@ -227,12 +352,18 @@ public:
 
     // 处理静态文件请求
     bool handleStaticFileRequest(struct mg_connection* nc, struct mg_http_message* hm, const HttpRequest& request) {
+        LOG_DEBUG_FULL("WEB", "处理静态文件请求: " + request.path);
+
         if (config_.static_files_dir.empty()) {
+            LOG_DEBUG_FULL("WEB", "静态文件目录为空，无法处理静态文件请求");
             return false;
         }
 
+        LOG_DEBUG_FULL("WEB", "静态文件目录: " + config_.static_files_dir);
+
         // 检查是否是静态文件请求
         if (request.method != "GET" && request.method != "HEAD") {
+            LOG_DEBUG_FULL("WEB", "非GET或HEAD请求，不处理静态文件: " + request.method);
             return false;
         }
 
@@ -240,15 +371,25 @@ public:
         std::string path = request.path;
         if (path == "/") {
             path = "/index.html";
+            LOG_DEBUG_FULL("WEB", "请求根路径，使用默认文件: /index.html");
         }
 
         std::string file_path = config_.static_files_dir + path;
+        LOG_DEBUG_FULL("WEB", "完整文件路径: " + file_path);
 
         // 检查文件是否存在
         struct stat st;
-        if (stat(file_path.c_str(), &st) != 0 || !S_ISREG(st.st_mode)) {
+        if (stat(file_path.c_str(), &st) != 0) {
+            LOG_DEBUG_FULL("WEB", "文件不存在: " + file_path + ", 错误: " + std::string(strerror(errno)));
             return false;
         }
+
+        if (!S_ISREG(st.st_mode)) {
+            LOG_DEBUG_FULL("WEB", "路径不是常规文件: " + file_path);
+            return false;
+        }
+
+        LOG_DEBUG_FULL("WEB", "文件存在，大小: " + std::to_string(st.st_size) + " 字节");
 
         // 获取文件扩展名
         std::string ext;
@@ -257,6 +398,7 @@ public:
             ext = file_path.substr(dot_pos);
         }
         std::string content_type = getContentTypeFromExtension(ext);
+        LOG_DEBUG_FULL("WEB", "文件扩展名: " + ext + ", 内容类型: " + content_type);
 
         // 发送文件
         struct mg_http_serve_opts opts;
@@ -264,7 +406,11 @@ public:
         // 设置额外的HTTP头，包括Content-Type
         std::string extra_headers = "Content-Type: " + content_type + "\r\n";
         opts.extra_headers = extra_headers.c_str();
+
+        LOG_DEBUG_FULL("WEB", "正在发送文件: " + file_path);
         mg_http_serve_file(nc, hm, file_path.c_str(), &opts);
+        LOG_DEBUG_FULL("WEB", "文件发送完成: " + file_path);
+
         return true;
     }
 
@@ -420,18 +566,26 @@ WebServer::~WebServer() {
 }
 
 bool WebServer::initialize(const WebServerConfig& config, std::shared_ptr<RestHandler> rest_handler) {
+    std::cerr << "[WEB][web_server.cpp:initialize] 开始初始化Web服务器..." << std::endl;
+
     if (is_initialized_) {
+        std::cerr << "[WEB][web_server.cpp:initialize] Web服务器已经初始化" << std::endl;
         return true;
     }
 
+    std::cerr << "[WEB][web_server.cpp:initialize] 设置配置..." << std::endl;
     config_ = config;
     rest_handler_ = rest_handler;
 
+    std::cerr << "[WEB][web_server.cpp:initialize] 初始化实现..." << std::endl;
     if (!impl_->initialize(config, rest_handler)) {
+        std::cerr << "[WEB][web_server.cpp:initialize] 无法初始化Web服务器实现" << std::endl;
         return false;
     }
+    std::cerr << "[WEB][web_server.cpp:initialize] 实现初始化成功" << std::endl;
 
     is_initialized_ = true;
+    std::cerr << "[WEB][web_server.cpp:initialize] Web服务器初始化成功" << std::endl;
     return true;
 }
 

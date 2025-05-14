@@ -16,6 +16,9 @@
 #include <iostream>  // for std::cerr
 #include <sys/stat.h>  // for struct stat
 #include <cstdlib>  // for system
+#include <fstream>  // for std::ifstream
+#include <cstring>  // for strerror
+#include <cerrno>   // for errno
 
 namespace cam_server {
 namespace api {
@@ -532,6 +535,153 @@ void ApiServer::registerApiRoutes() {
         response.body += "  \"is_capturing\": " + std::string(camera_manager.isCapturing() ? "true" : "false") + ",\n";
         response.body += "  \"preview_url\": \"/api/stream\"\n";
         response.body += "}";
+
+        return response;
+    });
+
+    // 注册静态文件路由处理程序
+    rest_handler_->registerRoute("GET", "/index.html", [this](const HttpRequest& request) -> HttpResponse {
+        HttpResponse response;
+        response.status_code = 200;
+        response.status_message = "OK";
+        response.content_type = "text/html";
+
+        // 读取静态文件
+        std::string file_path = "/home/orangepi/Qworkspace/cam_server_cpp/static/index.html";
+        LOG_INFO("尝试读取文件: " + file_path, "ApiServer");
+        std::cerr << "[API] 尝试读取文件: " << file_path << std::endl;
+
+        // 检查文件是否存在
+        struct stat st;
+        if (stat(file_path.c_str(), &st) != 0) {
+            LOG_ERROR("文件不存在: " + file_path + ", 错误: " + std::string(strerror(errno)), "ApiServer");
+            std::cerr << "[API] 文件不存在: " << file_path << ", 错误: " << strerror(errno) << std::endl;
+        } else {
+            LOG_INFO("文件存在，大小: " + std::to_string(st.st_size) + " 字节", "ApiServer");
+            std::cerr << "[API] 文件存在，大小: " << st.st_size << " 字节" << std::endl;
+        }
+
+        std::ifstream file(file_path);
+        if (file.is_open()) {
+            LOG_INFO("文件打开成功: " + file_path, "ApiServer");
+            std::cerr << "[API] 文件打开成功: " << file_path << std::endl;
+            std::stringstream buffer;
+            buffer << file.rdbuf();
+            response.body = buffer.str();
+            file.close();
+            LOG_INFO("文件读取成功，大小: " + std::to_string(response.body.size()) + " 字节", "ApiServer");
+            std::cerr << "[API] 文件读取成功，大小: " << response.body.size() << " 字节" << std::endl;
+        } else {
+            LOG_ERROR("无法打开文件: " + file_path + ", 错误: " + std::string(strerror(errno)), "ApiServer");
+            std::cerr << "[API] 无法打开文件: " << file_path << ", 错误: " << strerror(errno) << std::endl;
+            response.status_code = 404;
+            response.status_message = "Not Found";
+            response.body = "<html><body><h1>404 Not Found</h1><p>The requested file was not found.</p></body></html>";
+        }
+
+        return response;
+    });
+
+    rest_handler_->registerRoute("GET", "/cameras.html", [this](const HttpRequest& request) -> HttpResponse {
+        HttpResponse response;
+        response.status_code = 200;
+        response.status_message = "OK";
+        response.content_type = "text/html";
+
+        // 读取静态文件
+        std::string file_path = "/home/orangepi/Qworkspace/cam_server_cpp/static/cameras.html";
+        std::ifstream file(file_path);
+        if (file.is_open()) {
+            std::stringstream buffer;
+            buffer << file.rdbuf();
+            response.body = buffer.str();
+            file.close();
+        } else {
+            response.status_code = 404;
+            response.status_message = "Not Found";
+            response.body = "<html><body><h1>404 Not Found</h1><p>The requested file was not found.</p></body></html>";
+        }
+
+        return response;
+    });
+
+    rest_handler_->registerRoute("GET", "/camera_select.html", [this](const HttpRequest& request) -> HttpResponse {
+        HttpResponse response;
+        response.status_code = 200;
+        response.status_message = "OK";
+        response.content_type = "text/html";
+
+        // 读取静态文件
+        std::string file_path = "/home/orangepi/Qworkspace/cam_server_cpp/static/camera_select.html";
+        std::ifstream file(file_path);
+        if (file.is_open()) {
+            std::stringstream buffer;
+            buffer << file.rdbuf();
+            response.body = buffer.str();
+            file.close();
+        } else {
+            response.status_code = 404;
+            response.status_message = "Not Found";
+            response.body = "<html><body><h1>404 Not Found</h1><p>The requested file was not found.</p></body></html>";
+        }
+
+        return response;
+    });
+
+    rest_handler_->registerRoute("GET", "/system_info.html", [this](const HttpRequest& request) -> HttpResponse {
+        HttpResponse response;
+        response.status_code = 200;
+        response.status_message = "OK";
+        response.content_type = "text/html";
+
+        // 读取静态文件
+        std::string file_path = "/home/orangepi/Qworkspace/cam_server_cpp/static/system_info.html";
+        std::ifstream file(file_path);
+        if (file.is_open()) {
+            std::stringstream buffer;
+            buffer << file.rdbuf();
+            response.body = buffer.str();
+            file.close();
+        } else {
+            response.status_code = 404;
+            response.status_message = "Not Found";
+            response.body = "<html><body><h1>404 Not Found</h1><p>The requested file was not found.</p></body></html>";
+        }
+
+        return response;
+    });
+
+    // 注册CSS文件路由
+    rest_handler_->registerRoute("GET", "/css/style.css", [this](const HttpRequest& request) -> HttpResponse {
+        HttpResponse response;
+        response.status_code = 200;
+        response.status_message = "OK";
+        response.content_type = "text/css";
+
+        // 读取静态文件
+        std::string file_path = "/home/orangepi/Qworkspace/cam_server_cpp/static/css/style.css";
+        std::ifstream file(file_path);
+        if (file.is_open()) {
+            std::stringstream buffer;
+            buffer << file.rdbuf();
+            response.body = buffer.str();
+            file.close();
+        } else {
+            response.status_code = 404;
+            response.status_message = "Not Found";
+            response.body = "/* CSS file not found */";
+        }
+
+        return response;
+    });
+
+    // 注册根路径重定向
+    rest_handler_->registerRoute("GET", "/", [](const HttpRequest& request) -> HttpResponse {
+        HttpResponse response;
+        response.status_code = 302;  // 临时重定向
+        response.status_message = "Found";
+        response.headers["Location"] = "/index.html";
+        response.body = "<html><body><h1>Redirecting...</h1><p>Please click <a href=\"/index.html\">here</a> if you are not redirected automatically.</p></body></html>";
 
         return response;
     });
