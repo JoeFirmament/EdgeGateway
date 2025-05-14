@@ -279,11 +279,34 @@ void SystemMonitor::updateGpuInfo() {
     }
 
     // 尝试获取GPU温度（RK3588特定）
+    // 注意：RK3588的Mali-G610 GPU可能不提供温度信息
     std::ifstream temp_file("/sys/devices/platform/fb000000.gpu/temp");
     if (temp_file.is_open()) {
         int temp;
-        temp_file >> temp;
-        system_info_.gpu.temperature = temp / 1000.0; // 转换为摄氏度
+        if (temp_file >> temp) {
+            system_info_.gpu.temperature = temp / 1000.0; // 转换为摄氏度
+            LOG_DEBUG("GPU温度: " + std::to_string(system_info_.gpu.temperature) + "°C", "SystemMonitor");
+        } else {
+            LOG_DEBUG("无法读取GPU温度值", "SystemMonitor");
+        }
+    } else {
+        // 尝试使用其他方法获取GPU温度
+        FILE* fp = popen("cat /sys/class/thermal/thermal_zone*/type | grep -n gpu | cut -d':' -f1 | xargs -I{} cat /sys/class/thermal/thermal_zone$(({}-1))/temp 2>/dev/null", "r");
+        if (fp) {
+            char buffer[128];
+            if (fgets(buffer, sizeof(buffer), fp) != NULL) {
+                try {
+                    int temp = std::stoi(buffer);
+                    system_info_.gpu.temperature = temp / 1000.0; // 转换为摄氏度
+                    LOG_DEBUG("通过thermal_zone获取GPU温度: " + std::to_string(system_info_.gpu.temperature) + "°C", "SystemMonitor");
+                } catch (const std::exception& e) {
+                    LOG_DEBUG("无法解析GPU温度: " + std::string(e.what()), "SystemMonitor");
+                }
+            }
+            pclose(fp);
+        } else {
+            LOG_DEBUG("无法获取GPU温度信息", "SystemMonitor");
+        }
     }
 
     // 尝试获取GPU频率（RK3588特定）

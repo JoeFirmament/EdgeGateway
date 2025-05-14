@@ -281,7 +281,15 @@
                         document.getElementById('cpu-temperature').textContent = data.cpu_temperature ? `${data.cpu_temperature}°C` : '-';
                         document.getElementById('cpu-frequency').textContent = data.cpu_frequency ? `${data.cpu_frequency} MHz` : '-';
                         document.getElementById('gpu-usage').textContent = data.gpu_usage !== undefined ? `${data.gpu_usage}%` : '-';
-                        document.getElementById('gpu-temperature').textContent = data.gpu_temperature ? `${data.gpu_temperature}°C` : '-';
+
+                        // GPU温度可能无法获取
+                        const gpuTemp = document.getElementById('gpu-temperature');
+                        if (data.gpu_temperature && data.gpu_temperature > 0) {
+                            gpuTemp.textContent = `${data.gpu_temperature}°C`;
+                        } else {
+                            gpuTemp.textContent = '不可用';
+                            gpuTemp.style.color = '#999';
+                        }
 
                         // 更新系统负载
                         if (data.load_average && data.load_average.length >= 3) {
