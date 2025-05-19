@@ -417,26 +417,13 @@
                                 <input type="number" id="fpsInput" value="30" min="1" max="60">
                             </div>
 
-                            <button id="applySettingsBtn" class="button primary" style="width: 100%;">应用设置</button>
+                            <button id="applySettingsBtn" class="button primary" style="width: 100%;">重置摄像头并应用当前设置</button>
                         </div>
 
                         <div class="camera-status">
                             <h3>摄像头状态</h3>
-                            <div class="status-item">
-                                <span class="status-label">连接状态:</span>
-                                <span id="connectionStatus" class="status-value">未连接</span>
-                            </div>
-                            <div class="status-item">
-                                <span class="status-label">客户端ID:</span>
-                                <span id="clientId" class="status-value">--</span>
-                            </div>
-                            <div class="status-item">
-                                <span class="status-label">当前分辨率:</span>
-                                <span id="currentResolution" class="status-value">--</span>
-                            </div>
-                            <div class="status-item">
-                                <span class="status-label">当前帧率:</span>
-                                <span id="currentFps" class="status-value">--</span>
+                            <div id="camera-status">
+                                <!-- 摄像头状态信息将在这里动态添加 -->
                             </div>
                         </div>
                     </div>
@@ -587,6 +574,6 @@
         </div>
     </div>
 
-    <script src="/static/js/index.js"></script>
+    <script src="/js/main.js"></script>
 </body>
 </html>

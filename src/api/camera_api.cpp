@@ -5,6 +5,7 @@
 #include "utils/file_utils.h"
 #include "video/i_video_recorder.h"
 #include "api/mjpeg_streamer.h"
+#include "camera/format_utils.h"
 
 // 简单的视频录制器实现
 namespace cam_server {
@@ -108,7 +109,8 @@ public:
         }
 
         // 简单地将帧数据写入文件
-        output_file_.write(reinterpret_cast<const char*>(frame.data.data()), frame.data.size());
+        const auto& data = frame.getData();
+        output_file_.write(reinterpret_cast<const char*>(data.data()), data.size());
 
         // 更新状态
         status_.frame_count++;
@@ -159,6 +161,7 @@ private:
 
 #include <iostream>
 #include <filesystem>
+namespace fs = std::filesystem;
 #include <fcntl.h>
 #include <unistd.h>
 #include <sys/ioctl.h>
@@ -180,19 +183,10 @@ CameraApi& CameraApi::getInstance() {
 }
 
 // 构造函数
-CameraApi::CameraApi() : is_initialized_(false), video_recorder_(nullptr) {
-    // 初始化格式名称映射
-    format_names_[V4L2_PIX_FMT_MJPEG] = "MJPG";
-    format_names_[V4L2_PIX_FMT_YUYV] = "YUYV";
-    format_names_[V4L2_PIX_FMT_RGB24] = "RGB24";
-    format_names_[V4L2_PIX_FMT_BGR24] = "BGR24";
-    format_names_[V4L2_PIX_FMT_YUV420] = "YUV420";
-    format_names_[V4L2_PIX_FMT_NV12] = "NV12";
-    format_names_[V4L2_PIX_FMT_NV21] = "NV21";
-    format_names_[V4L2_PIX_FMT_H264] = "H264";
-    format_names_[V4L2_PIX_FMT_MPEG4] = "MPEG4";
-    format_names_[V4L2_PIX_FMT_JPEG] = "JPEG";
-
+CameraApi::CameraApi() 
+    : is_initialized_(false), 
+      video_recorder_(nullptr),
+      mjpeg_streamer_(MjpegStreamer::getInstance()) {
     // 设置图像和视频保存目录
     images_dir_ = "data/images";
     videos_dir_ = "data/videos";
@@ -217,85 +211,71 @@ bool CameraApi::initialize() {
 }
 
 // 注册API路由
-bool CameraApi::registerRoutes(RestHandler& handler) {
-    // 注册获取所有摄像头的路由
-    handler.registerRoute("GET", "/api/cameras",
-        [this](const HttpRequest& request) {
-            return this->handleGetAllCameras(request);
-        }
-    );
+bool CameraApi::registerRoutes(RestHandler& rest_handler) {
+    std::cerr << "[CAMERA_API][DEBUG] 开始注册摄像头API路由..." << std::endl;
 
-    // 注册打开摄像头的路由
-    handler.registerRoute("POST", "/api/cameras/open",
-        [this](const HttpRequest& request) {
-            return this->handleOpenCamera(request);
-        }
-    );
+    // 获取摄像头状态
+    std::cerr << "[CAMERA_API][DEBUG] 注册摄像头状态API: GET /api/camera/status" << std::endl;
+    rest_handler.registerRoute("GET", "/api/camera/status", [this](const HttpRequest& request) {
+        return handleGetCameraStatus(request);
+    });
 
-    // 注册启动摄像头预览的路由
-    handler.registerRoute("POST", "/api/cameras/start_preview",
-        [this](const HttpRequest& request) {
-            return this->handleStartPreview(request);
-        }
-    );
+    // 获取所有摄像头列表
+    std::cerr << "[CAMERA_API][DEBUG] 注册摄像头列表API: GET /api/camera/list" << std::endl;
+    rest_handler.registerRoute("GET", "/api/camera/list", [this](const HttpRequest& request) {
+        return handleGetAllCameras(request);
+    });
 
-    // 注册停止摄像头预览的路由
-    handler.registerRoute("POST", "/api/cameras/stop_preview",
-        [this](const HttpRequest& request) {
-            return this->handleStopPreview(request);
-        }
-    );
+    // 打开摄像头
+    std::cerr << "[CAMERA_API][DEBUG] 注册打开摄像头API: POST /api/camera/open" << std::endl;
+    rest_handler.registerRoute("POST", "/api/camera/open", [this](const HttpRequest& request) {
+        return handleOpenCamera(request);
+    });
 
-    // 注册获取摄像头预览图像的路由
-    handler.registerRoute("GET", "/api/cameras/preview",
-        [this](const HttpRequest& request) {
-            return this->handleGetPreview(request);
-        }
-    );
+    // 关闭摄像头
+    std::cerr << "[CAMERA_API][DEBUG] 注册关闭摄像头API: POST /api/camera/close" << std::endl;
+    rest_handler.registerRoute("POST", "/api/camera/close", [this](const HttpRequest& request) {
+        return handleCloseCamera(request);
+    });
 
-    // 注册拍照的路由
-    handler.registerRoute("POST", "/api/cameras/capture",
-        [this](const HttpRequest& request) {
-            return this->handleCaptureImage(request);
-        }
-    );
+    // 开始预览
+    std::cerr << "[CAMERA_API][DEBUG] 注册开始预览API: POST /api/camera/start_preview" << std::endl;
+    rest_handler.registerRoute("POST", "/api/camera/start_preview", [this](const HttpRequest& request) {
+        return handleStartPreview(request);
+    });
 
-    // 注册开始录制的路由
-    handler.registerRoute("POST", "/api/cameras/start_recording",
-        [this](const HttpRequest& request) {
-            return this->handleStartRecording(request);
-        }
-    );
+    // 停止预览
+    std::cerr << "[CAMERA_API][DEBUG] 注册停止预览API: POST /api/camera/stop_preview" << std::endl;
+    rest_handler.registerRoute("POST", "/api/camera/stop_preview", [this](const HttpRequest& request) {
+        return handleStopPreview(request);
+    });
 
-    // 注册停止录制的路由
-    handler.registerRoute("POST", "/api/cameras/stop_recording",
-        [this](const HttpRequest& request) {
-            return this->handleStopRecording(request);
-        }
-    );
+    // 拍照
+    std::cerr << "[CAMERA_API][DEBUG] 注册拍照API: POST /api/camera/capture" << std::endl;
+    rest_handler.registerRoute("POST", "/api/camera/capture", [this](const HttpRequest& request) {
+        return handleCaptureImage(request);
+    });
 
-    // 注册获取录制状态的路由
-    handler.registerRoute("GET", "/api/cameras/recording_status",
-        [this](const HttpRequest& request) {
-            return this->handleGetRecordingStatus(request);
-        }
-    );
+    // 开始录制
+    std::cerr << "[CAMERA_API][DEBUG] 注册开始录制API: POST /api/camera/start_recording" << std::endl;
+    rest_handler.registerRoute("POST", "/api/camera/start_recording", [this](const HttpRequest& request) {
+        return handleStartRecording(request);
+    });
 
-    // 注册获取摄像头连接状态的路由
-    handler.registerRoute("GET", "/api/cameras/status",
-        [this](const HttpRequest& request) {
-            return this->handleGetCameraStatus(request);
-        }
-    );
+    // 停止录制
+    std::cerr << "[CAMERA_API][DEBUG] 注册停止录制API: POST /api/camera/stop_recording" << std::endl;
+    rest_handler.registerRoute("POST", "/api/camera/stop_recording", [this](const HttpRequest& request) {
+        return handleStopRecording(request);
+    });
 
-    // 注册关闭摄像头的路由
-    handler.registerRoute("POST", "/api/cameras/close",
-        [this](const HttpRequest& request) {
-            return this->handleCloseCamera(request);
-        }
-    );
+    std::cerr << "[CAMERA_API][DEBUG] 摄像头API路由注册完成" << std::endl;
 
-    std::cerr << "摄像头API路由注册成功" << std::endl;
+    // 注册MJPEG流API
+    std::cerr << "[CAMERA_API][DEBUG] 注册MJPEG流API: GET /api/camera/mjpeg" << std::endl;
+    rest_handler.registerRoute("GET", "/api/camera/mjpeg", [this](const HttpRequest& request) {
+        return handleMjpegStream(request);
+    });
+
     return true;
 }
 
@@ -303,7 +283,7 @@ bool CameraApi::registerRoutes(RestHandler& handler) {
 std::vector<CameraDeviceInfo> CameraApi::getAllCameras() {
     std::vector<CameraDeviceInfo> devices;
 
-    for (const auto& entry : std::filesystem::directory_iterator("/dev")) {
+    for (const auto& entry : fs::directory_iterator("/dev")) {
         std::string path = entry.path().string();
         if (path.find("/dev/video") == 0) {
             // 尝试提取数字部分
@@ -349,159 +329,6 @@ bool CameraApi::openCamera(const std::string& device_path,
     }
 }
 
-// 处理获取所有摄像头的请求
-HttpResponse CameraApi::handleGetAllCameras(const HttpRequest& request) {
-    HttpResponse response;
-    response.status_code = 200;
-    response.content_type = "application/json";
-
-    try {
-        auto cameras = getAllCameras();
-
-        // 构建JSON响应
-        std::ostringstream json;
-        json << "{\"cameras\":[";
-
-        for (size_t i = 0; i < cameras.size(); i++) {
-            const auto& camera = cameras[i];
-
-            json << "{";
-            json << "\"path\":\"" << camera.path << "\",";
-            json << "\"name\":\"" << camera.name << "\",";
-            json << "\"bus_info\":\"" << camera.bus_info << "\",";
-            json << "\"formats\":{";
-
-            bool first_format = true;
-            for (const auto& format : camera.formats) {
-                if (!first_format) {
-                    json << ",";
-                }
-
-                json << "\"" << format.first << "\":[";
-
-                bool first_res = true;
-                for (const auto& res : format.second) {
-                    if (!first_res) {
-                        json << ",";
-                    }
-
-                    json << "{\"width\":" << res.width << ",\"height\":" << res.height << "}";
-                    first_res = false;
-                }
-
-                json << "]";
-                first_format = false;
-            }
-
-            json << "}";
-            json << "}";
-
-            if (i < cameras.size() - 1) {
-                json << ",";
-            }
-        }
-
-        json << "]}";
-
-        response.body = json.str();
-    } catch (const std::exception& e) {
-        response.status_code = 500;
-        response.content_type = "application/json";
-        response.body = "{\"error\":\"" + std::string(e.what()) + "\"}";
-    }
-
-    return response;
-}
-
-// 处理打开摄像头的请求
-HttpResponse CameraApi::handleOpenCamera(const HttpRequest& request) {
-    HttpResponse response;
-    response.status_code = 200;
-    response.content_type = "application/json";
-
-    try {
-        // 解析请求体
-        std::string device_path;
-        std::string format;
-        int width = 0;
-        int height = 0;
-        int fps = 30;
-
-        // 简单的JSON解析
-        std::string body = request.body;
-
-        auto extract_value = [&body](const std::string& key) -> std::string {
-            std::string search = "\"" + key + "\":";
-            size_t pos = body.find(search);
-            if (pos == std::string::npos) {
-                return "";
-            }
-
-            pos += search.length();
-
-            // 检查是否是字符串值
-            bool is_string = false;
-            if (pos < body.length() && body[pos] == '"') {
-                is_string = true;
-                pos++;
-            }
-
-            size_t end_pos;
-            if (is_string) {
-                end_pos = body.find("\"", pos);
-            } else {
-                end_pos = body.find_first_of(",}", pos);
-            }
-
-            if (end_pos == std::string::npos) {
-                return "";
-            }
-
-            return body.substr(pos, end_pos - pos);
-        };
-
-        device_path = extract_value("device_path");
-        format = extract_value("format");
-
-        std::string width_str = extract_value("width");
-        std::string height_str = extract_value("height");
-        std::string fps_str = extract_value("fps");
-
-        if (!width_str.empty()) {
-            width = std::stoi(width_str);
-        }
-
-        if (!height_str.empty()) {
-            height = std::stoi(height_str);
-        }
-
-        if (!fps_str.empty()) {
-            fps = std::stoi(fps_str);
-        }
-
-        // 验证参数
-        if (device_path.empty() || format.empty() || width <= 0 || height <= 0 || fps <= 0) {
-            response.status_code = 400;
-            response.body = "{\"error\":\"缺少必要参数或参数无效\"}";
-            return response;
-        }
-
-        // 打开摄像头
-        if (openCamera(device_path, format, width, height, fps)) {
-            response.body = "{\"success\":true,\"message\":\"摄像头已成功打开\"}";
-        } else {
-            response.status_code = 500;
-            response.body = "{\"success\":false,\"error\":\"无法打开摄像头\"}";
-        }
-    } catch (const std::exception& e) {
-        response.status_code = 500;
-        response.content_type = "application/json";
-        response.body = "{\"error\":\"" + std::string(e.what()) + "\"}";
-    }
-
-    return response;
-}
-
 // 查询设备信息
 bool CameraApi::queryDevice(const std::string& device_path, CameraDeviceInfo& info) {
     int fd = open(device_path.c_str(), O_RDWR);
@@ -535,7 +362,7 @@ bool CameraApi::queryDevice(const std::string& device_path, CameraDeviceInfo& in
     fmt.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
 
     while (ioctl(fd, VIDIOC_ENUM_FMT, &fmt) == 0) {
-        std::string format_name = getFormatName(fmt.pixelformat);
+        std::string format_name = camera::FormatUtils::getV4L2FormatName(fmt.pixelformat);
 
         // 查询该格式支持的分辨率
         struct v4l2_frmsizeenum frmsize;
@@ -665,120 +492,6 @@ bool CameraApi::closeCamera() {
     }
 }
 
-// 处理启动摄像头预览的请求
-HttpResponse CameraApi::handleStartPreview(const HttpRequest& request) {
-    HttpResponse response;
-    response.status_code = 200;
-    response.content_type = "application/json";
-
-    try {
-        if (startPreview()) {
-            response.body = "{\"success\":true,\"message\":\"摄像头预览已启动\"}";
-        } else {
-            response.status_code = 500;
-            response.body = "{\"success\":false,\"error\":\"无法启动摄像头预览\"}";
-        }
-    } catch (const std::exception& e) {
-        response.status_code = 500;
-        response.content_type = "application/json";
-        response.body = "{\"error\":\"" + std::string(e.what()) + "\"}";
-    }
-
-    return response;
-}
-
-// 处理停止摄像头预览的请求
-HttpResponse CameraApi::handleStopPreview(const HttpRequest& request) {
-    HttpResponse response;
-    response.status_code = 200;
-    response.content_type = "application/json";
-
-    try {
-        if (stopPreview()) {
-            response.body = "{\"success\":true,\"message\":\"摄像头预览已停止\"}";
-        } else {
-            response.status_code = 500;
-            response.body = "{\"success\":false,\"error\":\"无法停止摄像头预览\"}";
-        }
-    } catch (const std::exception& e) {
-        response.status_code = 500;
-        response.content_type = "application/json";
-        response.body = "{\"error\":\"" + std::string(e.what()) + "\"}";
-    }
-
-    return response;
-}
-
-// 处理获取摄像头预览图像的请求
-HttpResponse CameraApi::handleGetPreview(const HttpRequest& request) {
-    HttpResponse response;
-
-    try {
-        // 获取摄像头管理器实例
-        auto& camera_manager = camera::CameraManager::getInstance();
-
-        // 检查摄像头是否已打开并正在捕获
-        if (!camera_manager.isDeviceOpen() || !camera_manager.isCapturing()) {
-            response.status_code = 400;
-            response.content_type = "application/json";
-            response.body = "{\"error\":\"摄像头未打开或未在预览中\"}";
-            return response;
-        }
-
-        // 获取当前设备
-        auto device = camera_manager.getCurrentDevice();
-        if (!device) {
-            response.status_code = 500;
-            response.content_type = "application/json";
-            response.body = "{\"error\":\"无法获取摄像头设备\"}";
-            return response;
-        }
-
-        // 获取一帧图像
-        camera::Frame frame = device->getFrame(500); // 500毫秒超时
-        if (frame.data.empty()) {
-            response.status_code = 500;
-            response.content_type = "application/json";
-            response.body = "{\"error\":\"无法获取摄像头帧\"}";
-            return response;
-        }
-
-        // 设置响应头
-        response.status_code = 200;
-        response.content_type = "image/jpeg";
-
-        // 设置响应体
-        response.body.assign(frame.data.begin(), frame.data.end());
-
-        // 添加缓存控制头，防止浏览器缓存
-        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0";
-        response.headers["Pragma"] = "no-cache";
-        response.headers["Expires"] = "0";
-
-    } catch (const std::exception& e) {
-        response.status_code = 500;
-        response.content_type = "application/json";
-        response.body = "{\"error\":\"" + std::string(e.what()) + "\"}";
-    }
-
-    return response;
-}
-
-// 获取格式名称
-std::string CameraApi::getFormatName(uint32_t format) {
-    char fmt_str[5] = {0};
-    fmt_str[0] = format & 0xFF;
-    fmt_str[1] = (format >> 8) & 0xFF;
-    fmt_str[2] = (format >> 16) & 0xFF;
-    fmt_str[3] = (format >> 24) & 0xFF;
-
-    auto it = format_names_.find(format);
-    if (it != format_names_.end()) {
-        return it->second;
-    }
-    return std::string(fmt_str);
-}
-
 // 确保目录存在
 bool CameraApi::ensureDirectoryExists(const std::string& path) {
     try {
@@ -805,60 +518,53 @@ std::string CameraApi::captureImage(const std::string& output_path, int quality)
             return "";
         }
 
-        // 获取当前设备
-        auto device = camera_manager.getCurrentDevice();
-        if (!device) {
-            LOG_ERROR("无法获取摄像头设备", "CameraApi");
-            return "";
-        }
-
         // 获取一帧图像
-        camera::Frame frame = device->getFrame(500); // 500毫秒超时
-        if (frame.data.empty()) {
-            LOG_ERROR("无法获取摄像头帧", "CameraApi");
+        auto frame = camera_manager.getFrame();
+
+        // 验证帧数据
+        if (frame.getData().empty()) {
+            LOG_ERROR("捕获图像失败：空数据", "CameraApi");
             return "";
         }
 
-        // 生成文件名
-        std::string file_path;
-        if (output_path.empty()) {
-            // 使用当前时间生成文件名
-            auto now = std::chrono::system_clock::now();
-            auto now_time_t = std::chrono::system_clock::to_time_t(now);
-            std::stringstream ss;
-            ss << images_dir_ << "/capture_";
-            ss << std::put_time(std::localtime(&now_time_t), "%Y%m%d_%H%M%S");
-            ss << ".jpg";
-            file_path = ss.str();
-        } else {
-            file_path = output_path;
-        }
-
-        // 确保目录存在
-        std::filesystem::path p(file_path);
-        ensureDirectoryExists(p.parent_path().string());
-
-        // 如果已经是MJPEG格式，直接保存
-        if (frame.format == camera::PixelFormat::MJPEG) {
-            std::ofstream file(file_path, std::ios::binary);
-            if (!file) {
-                LOG_ERROR("无法创建文件: " + file_path, "CameraApi");
+        // 创建输出目录
+        std::filesystem::path p(output_path);
+        if (!std::filesystem::exists(p.parent_path())) {
+            if (!std::filesystem::create_directories(p.parent_path())) {
+                LOG_ERROR("无法创建输出目录: " + p.parent_path().string(), "CameraApi");
                 return "";
             }
-            file.write(reinterpret_cast<const char*>(frame.data.data()), frame.data.size());
-            file.close();
-        } else {
-            // 需要转换为JPEG格式
-            // 这里简化实现，实际项目中应该使用更高效的方法
-            // 例如使用FFmpeg或OpenCV进行转换
-            LOG_ERROR("不支持的图像格式，需要转换为JPEG", "CameraApi");
+        }
+
+        // 打开输出文件
+        std::ofstream file(output_path, std::ios::binary);
+        if (!file) {
+            LOG_ERROR("无法打开输出文件: " + output_path, "CameraApi");
             return "";
         }
 
-        LOG_INFO("成功保存图像: " + file_path, "CameraApi");
-        return file_path;
+        // 如果是MJPEG格式，直接写入
+        if (frame.getFormat() == camera::PixelFormat::MJPEG) {
+            const auto& data = frame.getData();
+            file.write(reinterpret_cast<const char*>(data.data()), data.size());
+            file.close();
+            return output_path;
+        }
+
+        // 否则需要转换为JPEG
+        std::vector<uint8_t> jpeg_data;
+        if (!mjpeg_streamer_.encodeToJpeg(frame, jpeg_data)) {
+            LOG_ERROR("JPEG编码失败", "CameraApi");
+            return "";
+        }
+
+        file.write(reinterpret_cast<const char*>(jpeg_data.data()), jpeg_data.size());
+        file.close();
+
+        return output_path;
+
     } catch (const std::exception& e) {
-        LOG_ERROR("拍照异常: " + std::string(e.what()), "CameraApi");
+        LOG_ERROR("捕获图像时发生异常: " + std::string(e.what()), "CameraApi");
         return "";
     }
 }
@@ -1251,126 +957,66 @@ HttpResponse CameraApi::handleGetRecordingStatus(const HttpRequest& request) {
     return response;
 }
 
-// 处理获取摄像头连接状态请求
+// 处理获取摄像头状态请求
 HttpResponse CameraApi::handleGetCameraStatus(const HttpRequest& request) {
-    HttpResponse response;
-    response.status_code = 200;
-    response.content_type = "application/json";
-
     try {
-        // 获取查询参数中的摄像头ID
-        std::string camera_id;
-        auto it = request.query_params.find("camera_id");
-        if (it != request.query_params.end()) {
-            camera_id = it->second;
-        }
-
-        if (camera_id.empty()) {
-            response.status_code = 400;
-            response.body = "{\"success\":false,\"error\":\"缺少摄像头ID参数\"}";
-            return response;
-        }
-
-        // 获取MJPEG流处理器实例
-        auto& mjpeg_streamer = api::MjpegStreamer::getInstance();
-
-        // 检查摄像头是否有客户端连接
-        bool is_connected = false;
-        std::string client_id;
-        int width = 0;
-        int height = 0;
-        double fps = 0.0;
-        std::string format;
-        int64_t connection_time = 0;
-
-        // 这里需要从MjpegStreamer类中获取摄像头连接状态
-        // 由于我们没有直接的API，我们可以通过检查camera_clients_映射来判断
-        // 但这需要修改MjpegStreamer类，添加获取摄像头连接状态的方法
-
-        // 临时方案：从CameraManager获取当前摄像头信息
         auto& camera_manager = camera::CameraManager::getInstance();
-        if (camera_manager.isDeviceOpen()) {
-            // 获取当前设备
-            auto current_device = camera_manager.getCurrentDevice();
-            if (current_device) {
-                // 获取设备信息
-                auto device_info = current_device->getDeviceInfo();
+        bool is_open = camera_manager.isDeviceOpen();
+        bool is_capturing = is_open && camera_manager.isCapturing();
 
-                // 检查是否是请求的摄像头
-                if (device_info.device_path == camera_id) {
-                    is_connected = true;
-
-                    // 获取当前客户端信息
-                    // 这里简化处理，实际应该从MjpegStreamer获取
-                    client_id = "current_client";
-
-                    // 获取摄像头参数
-                    auto params = current_device->getParams();
-                    width = params.width;
-                    height = params.height;
-                    fps = mjpeg_streamer.getCurrentFps();
-
-                    // 获取格式
-                    switch (params.format) {
-                        case camera::PixelFormat::MJPEG:
-                            format = "MJPEG";
-                            break;
-                        case camera::PixelFormat::YUYV:
-                            format = "YUYV";
-                            break;
-                        case camera::PixelFormat::H264:
-                            format = "H264";
-                            break;
-                        case camera::PixelFormat::NV12:
-                            format = "NV12";
-                            break;
-                        case camera::PixelFormat::RGB24:
-                            format = "RGB24";
-                            break;
-                        case camera::PixelFormat::BGR24:
-                            format = "BGR24";
-                            break;
-                        default:
-                            format = "UNKNOWN";
-                            break;
-                    }
-                }
-            }
-        }
-
-        // 获取连接时间
-        if (is_connected) {
-            connection_time = std::chrono::duration_cast<std::chrono::milliseconds>(
-                std::chrono::system_clock::now().time_since_epoch()
-            ).count();
-        }
-
-        // 构建JSON响应
         std::ostringstream json;
         json << "{";
         json << "\"success\":true,";
-        json << "\"is_connected\":" << (is_connected ? "true" : "false");
+        json << "\"status\":\"" << (is_open ? (is_capturing ? "capturing" : "opened") : "closed") << "\",";
+        json << "\"is_open\":" << (is_open ? "true" : "false") << ",";
+        json << "\"is_capturing\":" << (is_capturing ? "true" : "false");
 
-        if (is_connected) {
-            json << ",\"client_id\":\"" << client_id << "\"";
-            json << ",\"camera_id\":\"" << camera_id << "\"";
-            json << ",\"width\":" << width;
-            json << ",\"height\":" << height;
-            json << ",\"fps\":" << fps;
-            json << ",\"format\":\"" << format << "\"";
-            json << ",\"connection_time\":" << connection_time;
+        if (is_open) {
+            try {
+                auto device = camera_manager.getCurrentDevice();
+                if (!device) {
+                    throw std::runtime_error("无法获取当前设备");
+                }
+
+                const auto& params = device->getParams();
+                const auto& info = device->getDeviceInfo();
+                
+                json << ",\"device_info\":{";
+                json << "\"path\":\"" << info.device_path << "\",";
+                json << "\"name\":\"" << info.device_name << "\",";
+                json << "\"description\":\"" << info.description << "\"";
+                json << "},";
+                
+                json << "\"params\":{";
+                json << "\"width\":" << params.width << ",";
+                json << "\"height\":" << params.height << ",";
+                json << "\"fps\":" << params.fps << ",";
+                json << "\"format\":\"" << camera::FormatUtils::getPixelFormatName(params.format) << "\",";
+                json << "\"brightness\":" << params.brightness << ",";
+                json << "\"contrast\":" << params.contrast << ",";
+                json << "\"saturation\":" << params.saturation << ",";
+                json << "\"exposure\":" << params.exposure;
+                json << "}";
+            } catch (const std::exception& e) {
+                LOG_ERROR("获取设备信息失败: " + std::string(e.what()), "CameraApi");
+                json << ",\"device_info_error\":\"" << e.what() << "\"";
+            }
         }
-
         json << "}";
 
+        HttpResponse response;
+        response.status_code = 200;
+        response.content_type = "application/json";
         response.body = json.str();
+        return response;
     } catch (const std::exception& e) {
+        LOG_ERROR("获取摄像头状态失败: " + std::string(e.what()), "CameraApi");
+        HttpResponse response;
         response.status_code = 500;
         response.content_type = "application/json";
-        response.body = "{\"success\":false,\"error\":\"" + std::string(e.what()) + "\"}";
+        response.body = "{\"success\":false,\"error\":\"获取摄像头状态失败: " + std::string(e.what()) + "\"}";
+        return response;
     }
-
-    return response;
 }
 
 // 处理关闭摄像头的请求
@@ -1390,6 +1036,280 @@ HttpResponse CameraApi::handleCloseCamera(const HttpRequest& request) {
         response.status_code = 500;
         response.content_type = "application/json";
         response.body = "{\"error\":\"" + std::string(e.what()) + "\"}";
+    }
+
+    return response;
+}
+
+// 处理MJPEG流请求
+HttpResponse CameraApi::handleMjpegStream(const HttpRequest& request) {
+    HttpResponse response;
+    response.status_code = 200;
+    response.content_type = "multipart/x-mixed-replace;boundary=frame";
+    response.is_streaming = true;
+
+    // 获取客户端ID和摄像头ID
+    std::string client_id;
+    std::string camera_id;
+    auto it = request.query_params.find("client_id");
+    if (it != request.query_params.end()) {
+        client_id = it->second;
+    }
+    it = request.query_params.find("camera_id");
+    if (it != request.query_params.end()) {
+        camera_id = it->second;
+    }
+
+    // 检查摄像头是否已打开
+    auto& camera_manager = camera::CameraManager::getInstance();
+    if (!camera_manager.isDeviceOpen() || !camera_manager.isCapturing()) {
+        response.status_code = 400;
+        response.content_type = "application/json";
+        response.body = "{\"error\":\"摄像头未打开或未在预览状态\"}";
+        return response;
+    }
+
+    // 初始化MJPEG流处理器
+    MjpegStreamerConfig config;
+    config.jpeg_quality = 80;
+    config.max_fps = 30;
+    config.max_clients = 2;
+    if (!mjpeg_streamer_.initialize(config)) {
+        response.status_code = 500;
+        response.content_type = "application/json";
+        response.body = "{\"error\":\"MJPEG流处理器初始化失败\"}";
+        return response;
+    }
+
+    // 启动MJPEG流处理器
+    if (!mjpeg_streamer_.start()) {
+        response.status_code = 500;
+        response.content_type = "application/json";
+        response.body = "{\"error\":\"MJPEG流处理器启动失败\"}";
+        return response;
+    }
+
+    // 添加流回调
+    response.stream_callback = [this, client_id, camera_id](std::function<void(const std::vector<uint8_t>&)> write_callback) {
+        // 添加MJPEG客户端
+        mjpeg_streamer_.addClient(client_id, camera_id,
+            [write_callback](const std::vector<uint8_t>& frame_data) {
+                // 构建MJPEG帧
+                std::string header = "\r\n--frame\r\nContent-Type: image/jpeg\r\nContent-Length: " +
+                                   std::to_string(frame_data.size()) + "\r\n\r\n";
+                
+                // 发送帧头
+                std::vector<uint8_t> header_data(header.begin(), header.end());
+                write_callback(header_data);
+                
+                // 发送帧数据
+                write_callback(frame_data);
+            },
+            [](const std::string& error) {
+                LOG_ERROR("MJPEG流错误: " + error, "CameraApi");
+            },
+            [this, client_id]() {
+                LOG_INFO("MJPEG客户端断开连接: " + client_id, "CameraApi");
+                mjpeg_streamer_.removeClient(client_id);
+            }
+        );
+    };
+
+    return response;
+}
+
+// 处理获取所有摄像头的请求
+HttpResponse CameraApi::handleGetAllCameras(const HttpRequest& request) {
+    HttpResponse response;
+    response.status_code = 200;
+    response.content_type = "application/json";
+
+    try {
+        auto cameras = getAllCameras();
+
+        // 构建JSON响应
+        std::ostringstream json;
+        json << "{\"cameras\":[";
+
+        for (size_t i = 0; i < cameras.size(); i++) {
+            const auto& camera = cameras[i];
+
+            json << "{";
+            json << "\"path\":\"" << camera.path << "\",";
+            json << "\"name\":\"" << camera.name << "\",";
+            json << "\"bus_info\":\"" << camera.bus_info << "\",";
+            json << "\"formats\":{";
+
+            bool first_format = true;
+            for (const auto& format : camera.formats) {
+                if (!first_format) {
+                    json << ",";
+                }
+
+                json << "\"" << format.first << "\":[";
+
+                bool first_res = true;
+                for (const auto& res : format.second) {
+                    if (!first_res) {
+                        json << ",";
+                    }
+
+                    json << "{\"width\":" << res.width << ",\"height\":" << res.height << "}";
+                    first_res = false;
+                }
+
+                json << "]";
+                first_format = false;
+            }
+
+            json << "}";
+            json << "}";
+
+            if (i < cameras.size() - 1) {
+                json << ",";
+            }
+        }
+
+        json << "]}";
+
+        response.body = json.str();
+    } catch (const std::exception& e) {
+        response.status_code = 500;
+        response.content_type = "application/json";
+        response.body = "{\"status\":\"error\",\"message\":\"" + std::string(e.what()) + "\"}";
+    }
+
+    return response;
+}
+
+// 处理打开摄像头的请求
+HttpResponse CameraApi::handleOpenCamera(const HttpRequest& request) {
+    HttpResponse response;
+    response.status_code = 200;
+    response.content_type = "application/json";
+
+    try {
+        // 解析请求体
+        std::string device_path;
+        std::string format;
+        int width = 0;
+        int height = 0;
+        int fps = 30;
+
+        // 简单的JSON解析
+        std::string body = request.body;
+
+        auto extract_value = [&body](const std::string& key) -> std::string {
+            std::string search = "\"" + key + "\":";
+            size_t pos = body.find(search);
+            if (pos == std::string::npos) {
+                return "";
+            }
+
+            pos += search.length();
+
+            // 检查是否是字符串值
+            bool is_string = false;
+            if (pos < body.length() && body[pos] == '"') {
+                is_string = true;
+                pos++;
+            }
+
+            size_t end_pos;
+            if (is_string) {
+                end_pos = body.find("\"", pos);
+            } else {
+                end_pos = body.find_first_of(",}", pos);
+            }
+
+            if (end_pos == std::string::npos) {
+                return "";
+            }
+
+            return body.substr(pos, end_pos - pos);
+        };
+
+        device_path = extract_value("device_path");
+        format = extract_value("format");
+
+        std::string width_str = extract_value("width");
+        std::string height_str = extract_value("height");
+        std::string fps_str = extract_value("fps");
+
+        if (!width_str.empty()) {
+            width = std::stoi(width_str);
+        }
+
+        if (!height_str.empty()) {
+            height = std::stoi(height_str);
+        }
+
+        if (!fps_str.empty()) {
+            fps = std::stoi(fps_str);
+        }
+
+        // 验证参数
+        if (device_path.empty() || format.empty() || width <= 0 || height <= 0 || fps <= 0) {
+            response.status_code = 400;
+            response.body = "{\"status\":\"error\",\"message\":\"缺少必要参数或参数无效\"}";
+            return response;
+        }
+
+        // 打开摄像头
+        if (openCamera(device_path, format, width, height, fps)) {
+            response.body = "{\"status\":\"success\",\"message\":\"摄像头已成功打开\"}";
+        } else {
+            response.status_code = 500;
+            response.body = "{\"status\":\"error\",\"message\":\"无法打开摄像头\"}";
+        }
+    } catch (const std::exception& e) {
+        response.status_code = 500;
+        response.content_type = "application/json";
+        response.body = "{\"status\":\"error\",\"message\":\"" + std::string(e.what()) + "\"}";
+    }
+
+    return response;
+}
+
+// 处理启动摄像头预览的请求
+HttpResponse CameraApi::handleStartPreview(const HttpRequest& request) {
+    HttpResponse response;
+    response.status_code = 200;
+    response.content_type = "application/json";
+
+    try {
+        if (startPreview()) {
+            response.body = "{\"status\":\"success\",\"message\":\"摄像头预览已启动\"}";
+        } else {
+            response.status_code = 500;
+            response.body = "{\"status\":\"error\",\"message\":\"无法启动摄像头预览\"}";
+        }
+    } catch (const std::exception& e) {
+        response.status_code = 500;
+        response.content_type = "application/json";
+        response.body = "{\"status\":\"error\",\"message\":\"" + std::string(e.what()) + "\"}";
+    }
+
+    return response;
+}
+
+// 处理停止摄像头预览的请求
+HttpResponse CameraApi::handleStopPreview(const HttpRequest& request) {
+    HttpResponse response;
+    response.status_code = 200;
+    response.content_type = "application/json";
+
+    try {
+        if (stopPreview()) {
+            response.body = "{\"status\":\"success\",\"message\":\"摄像头预览已停止\"}";
+        } else {
+            response.status_code = 500;
+            response.body = "{\"status\":\"error\",\"message\":\"无法停止摄像头预览\"}";
+        }
+    } catch (const std::exception& e) {
+        response.status_code = 500;
+        response.content_type = "application/json";
+        response.body = "{\"status\":\"error\",\"message\":\"" + std::string(e.what()) + "\"}";
     }
 
     return response;

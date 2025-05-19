@@ -101,6 +101,18 @@ public:
      */
     bool setParams(const CameraParams& params);
 
+    /**
+     * @brief 获取一帧图像
+     * @param timeout_ms 超时时间（毫秒）
+     * @return 帧数据
+     */
+    Frame getFrame(int timeout_ms = 1000) {
+        if (!current_device_ || !isCapturing()) {
+            return Frame();
+        }
+        return current_device_->getFrame(timeout_ms);
+    }
+
 private:
     // 私有构造函数，防止外部创建实例
     CameraManager();

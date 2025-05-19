@@ -1,15 +1,20 @@
 cmake_minimum_required(VERSION 3.10)
-project(cam_server_cpp VERSION 0.1.0 LANGUAGES C CXX)
+project(cam_server VERSION 1.0 LANGUAGES C CXX)
 
 # 设置C++标准
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+# 设置策略
+cmake_policy(SET CMP0079 NEW)
+
 # 设置输出目录
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
-set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
-set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
+set(EXECUTABLE_OUTPUT_PATH ${PROJECT_BINARY_DIR}/bin)
+
+# 设置工作目录为项目根目录
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR})
+set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR})
 
 # 添加CMake模块路径
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
@@ -117,3 +122,20 @@ message(STATUS "FFmpeg found: ${FFMPEG_FOUND}")
 message(STATUS "V4L2 found: ${V4L2_FOUND}")
 message(STATUS "Rockchip MPP found: ${ROCKCHIP_MPP_FOUND}")
 message(STATUS "LibRGA found: ${LIBRGA_FOUND}")
+
+# 设置cam_server的工作目录为项目根目录
+set_target_properties(cam_server PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}
+)
+
+# 链接所有模块
+target_link_libraries(cam_server
+    PRIVATE
+    api_module
+    camera_module
+    video_module
+    monitor_module
+    system_module
+    storage_module
+    utils_module
+)

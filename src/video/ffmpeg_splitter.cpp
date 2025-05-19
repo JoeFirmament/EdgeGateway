@@ -482,12 +482,29 @@ void FFmpegSplitter::executeTask(std::shared_ptr<SplitTask> task) {
         return;
     }
 
-    // 创建SwsContext
-    SwsContext* sws_context = sws_getContext(
+    // 创建 SwsContext 并设置色彩范围
+    SwsContext* sws_context_temp = sws_getContext(
         codec_context->width, codec_context->height, codec_context->pix_fmt,
         codec_context->width, codec_context->height, AV_PIX_FMT_RGB24,
         SWS_BILINEAR, nullptr, nullptr, nullptr
     );
+    
+    // 设置色彩范围为 MPEG (标准范围)
+    int srcRange = 0; // 0 = MPEG/TV/JPEG 范围 (16-235), 1 = JPEG/全范围 (0-255)
+    int dstRange = 0;
+    int brightness = 0;
+    int contrast = 0;
+    int saturation = 0;
+    
+    int colorspace_ret = sws_setColorspaceDetails(sws_context_temp, 
+                                     sws_getCoefficients(SWS_CS_DEFAULT), srcRange,
+                                     sws_getCoefficients(SWS_CS_DEFAULT), dstRange,
+                                     brightness, contrast, saturation);
+    if (colorspace_ret < 0) {
+        LOG_WARNING("设置色彩空间细节失败", "FFmpegSplitter");
+    }
+    
+    SwsContext* sws_context = sws_context_temp;
 
     if (!sws_context) {
         task->status.state = SplitTaskState::ERROR;

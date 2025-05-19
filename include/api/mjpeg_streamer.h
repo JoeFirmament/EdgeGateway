@@ -1,62 +1,38 @@
-#ifndef MJPEG_STREAMER_H
-#define MJPEG_STREAMER_H
+#pragma once
 
+#include "camera/frame.h"
 #include <string>
 #include <vector>
+#include <functional>
 #include <memory>
 #include <mutex>
-#include <atomic>
-#include <thread>
-#include <functional>
-#include <queue>
-#include <condition_variable>
 #include <unordered_map>
 #include <unordered_set>
-
-#include "camera/camera_device.h"
+#include <atomic>
 
 namespace cam_server {
 namespace api {
 
-/**
- * @brief MJPEG流配置结构体
- */
+// MJPEG流配置
 struct MjpegStreamerConfig {
-    // JPEG质量（1-100）
-    int jpeg_quality;
-    // 最大帧率
-    int max_fps;
-    // 最大客户端数量
-    int max_clients;
-    // 输出宽度（0表示使用原始宽度）
-    int output_width;
-    // 输出高度（0表示使用原始高度）
-    int output_height;
+    int jpeg_quality = 80;        // JPEG质量 (1-100)
+    int max_fps = 30;            // 最大帧率
+    int max_clients = 2;         // 最大客户端数量
+    int output_width = 0;        // 输出宽度 (0表示使用原始尺寸)
+    int output_height = 0;       // 输出高度 (0表示使用原始尺寸)
 };
 
-/**
- * @brief MJPEG流客户端结构体
- */
+// MJPEG客户端信息
 struct MjpegClient {
-    // 客户端ID
-    std::string id;
-    // 摄像头ID
-    std::string camera_id;
-    // 帧回调函数
-    std::function<void(const std::vector<uint8_t>&)> frame_callback;
-    // 错误回调函数
-    std::function<void(const std::string&)> error_callback;
-    // 关闭回调函数
-    std::function<void()> close_callback;
-    // 上次发送帧的时间戳
-    int64_t last_frame_time;
-    // 上次活动时间戳
-    int64_t last_activity_time;
+    std::string id;                                                    // 客户端ID
+    std::string camera_id;                                            // 关联的摄像头ID
+    std::function<void(const std::vector<uint8_t>&)> frame_callback;  // 帧回调函数
+    std::function<void(const std::string&)> error_callback;           // 错误回调函数
+    std::function<void()> close_callback;                             // 关闭回调函数
+    int64_t last_frame_time;                                          // 最后一帧时间
+    int64_t last_activity_time;                                       // 最后活动时间
 };
 
-/**
- * @brief MJPEG流处理器类
- */
 class MjpegStreamer {
 public:
     /**
@@ -96,8 +72,8 @@ public:
     bool addClient(const std::string& client_id,
                   const std::string& camera_id,
                   std::function<void(const std::vector<uint8_t>&)> frame_callback,
-                  std::function<void(const std::string&)> error_callback,
-                  std::function<void()> close_callback);
+                  std::function<void(const std::string&)> error_callback = nullptr,
+                  std::function<void()> close_callback = nullptr);
 
     /**
      * @brief 移除客户端
@@ -118,6 +94,49 @@ public:
      */
     double getCurrentFps() const;
 
+    /**
+     * @brief 获取运行状态
+     * @return 是否正在运行
+     */
+    /**
+     * @brief 检查客户端是否连接
+     * @param client_id 客户端ID
+     * @return 是否连接
+     */
+    bool isClientConnected(const std::string& client_id) const;
+
+    /**
+     * @brief 获取运行状态
+     * @return 是否正在运行
+     */
+    bool isRunning() const {
+        return is_running_.load();
+    }
+
+    /**
+     * @brief 获取活跃客户端列表
+     * @return 活跃客户端ID列表
+     */
+    std::vector<std::string> getActiveClients() const {
+        std::lock_guard<std::mutex> lock(clients_mutex_);
+        std::vector<std::string> active_clients;
+        for (const auto& pair : clients_) {
+            active_clients.push_back(pair.first);
+        }
+        return active_clients;
+    }
+
+    /**
+     * @brief 将帧编码为JPEG
+     * @param frame 输入帧
+     * @param jpeg_data 输出JPEG数据
+     * @return 是否成功编码
+     */
+    bool encodeToJpeg(const camera::Frame& frame, std::vector<uint8_t>& jpeg_data);
+
+    // 处理帧数据
+    void handleFrame(const camera::Frame& frame);
+
 private:
     // 私有构造函数，防止外部创建实例
     MjpegStreamer();
@@ -127,10 +146,6 @@ private:
     // 析构函数
     ~MjpegStreamer();
 
-    // 处理摄像头帧
-    void handleFrame(const camera::Frame& frame);
-    // 将帧编码为JPEG
-    bool encodeToJpeg(const camera::Frame& frame, std::vector<uint8_t>& jpeg_data);
     // 调整帧大小
     bool resizeFrame(const camera::Frame& frame, camera::Frame& resized_frame);
 
@@ -156,5 +171,3 @@ private:
 
 } // namespace api
 } // namespace cam_server
-
-#endif // MJPEG_STREAMER_H

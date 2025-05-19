@@ -526,56 +526,40 @@ bool FFmpegRecorder::encodeAndWriteFrame(const camera::Frame& frame) {
         return false;
     }
 
-    // 创建SwsContext（如果需要）
-    if (!sws_context_) {
-        int src_format;
-        switch (frame.format) {
-            case camera::PixelFormat::YUYV:
-                src_format = AV_PIX_FMT_YUYV422;
-                break;
-            case camera::PixelFormat::MJPEG:
-                src_format = AV_PIX_FMT_YUVJ420P;
-                break;
-            case camera::PixelFormat::RGB24:
-                src_format = AV_PIX_FMT_RGB24;
-                break;
-            case camera::PixelFormat::BGR24:
-                src_format = AV_PIX_FMT_BGR24;
-                break;
-            case camera::PixelFormat::NV12:
-                src_format = AV_PIX_FMT_NV12;
-                break;
-            default:
-                LOG_ERROR("不支持的像素格式", "FFmpegRecorder");
-                return false;
-        }
-
-        sws_context_ = sws_getContext(
-            frame.width, frame.height, (AVPixelFormat)src_format,
-            codec_context_->width, codec_context_->height, codec_context_->pix_fmt,
-            SWS_BILINEAR, nullptr, nullptr, nullptr
-        );
-
-        if (!sws_context_) {
-            LOG_ERROR("无法创建SwsContext", "FFmpegRecorder");
+    // 根据源格式选择转换方式
+    int src_format;
+    switch (frame.getFormat()) {
+        case camera::PixelFormat::YUYV:
+            src_format = AV_PIX_FMT_YUYV422;
+            break;
+        case camera::PixelFormat::RGB24:
+            src_format = AV_PIX_FMT_RGB24;
+            break;
+        case camera::PixelFormat::BGR24:
+            src_format = AV_PIX_FMT_BGR24;
+            break;
+        case camera::PixelFormat::NV12:
+            src_format = AV_PIX_FMT_NV12;
+            break;
+        default:
+            LOG_ERROR("不支持的像素格式: " + std::to_string(static_cast<int>(frame.getFormat())), "FFmpegRecorder");
             return false;
-        }
     }
 
-    // 转换帧格式
-    const uint8_t* src_data[4] = {frame.data.data(), nullptr, nullptr, nullptr};
-    int src_linesize[4] = {frame.width * 2, 0, 0, 0};  // 假设YUYV格式
-
-    ret = sws_scale(
-        sws_context_,
-        src_data, src_linesize, 0, frame.height,
-        frame_->data, frame_->linesize
+    // 创建图像转换上下文
+    SwsContext* sws_context = sws_getContext(
+        frame.getWidth(), frame.getHeight(), (AVPixelFormat)src_format,
+        frame.getWidth(), frame.getHeight(), codec_context_->pix_fmt,
+        SWS_BILINEAR, nullptr, nullptr, nullptr
     );
 
-    if (ret < 0) {
-        LOG_ERROR("无法转换帧格式", "FFmpegRecorder");
-        return false;
-    }
+    // 设置源数据
+    const uint8_t* src_data[4] = {frame.getData().data(), nullptr, nullptr, nullptr};
+    int src_linesize[4] = {frame.getWidth() * 2, 0, 0, 0};  // 假设YUYV格式
+
+    // 执行图像转换
+    sws_scale(sws_context, src_data, src_linesize, 0, frame.getHeight(),
+              frame_->data, frame_->linesize);
 
     // 设置帧时间戳
     frame_->pts = av_rescale_q(

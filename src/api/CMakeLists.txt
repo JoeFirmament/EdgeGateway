@@ -15,6 +15,17 @@ set(MONGOOSE_SOURCES
 # 为Mongoose源文件设置C编译选项
 set_source_files_properties(${MONGOOSE_SOURCES} PROPERTIES LANGUAGE C)
 
+# 查找FFmpeg包
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(FFMPEG REQUIRED
+    libavcodec
+    libavformat
+    libavutil
+    libswscale
+    libavfilter
+    libavdevice
+)
+
 # 创建库
 add_library(api_module STATIC ${API_SOURCES} ${MONGOOSE_SOURCES})
 
@@ -23,6 +34,7 @@ target_include_directories(api_module PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/../../include
     ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/mongoose
+    ${FFMPEG_INCLUDE_DIRS}
 )
 
 # 添加Mongoose所需的定义
@@ -40,6 +52,12 @@ target_link_libraries(api_module
     camera_module
     video_module
     ${FFMPEG_LIBRARIES}
+    avcodec
+    avformat
+    avutil
+    swscale
+    avfilter
+    avdevice
     pthread
     dl
 )

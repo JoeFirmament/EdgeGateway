@@ -5,38 +5,10 @@
 #include <vector>
 #include <memory>
 #include <functional>
+#include "camera/frame.h"
 
 namespace cam_server {
 namespace camera {
-
-/**
- * @brief 像素格式枚举
- */
-enum class PixelFormat {
-    UNKNOWN,
-    YUYV,
-    MJPEG,
-    H264,
-    NV12,
-    RGB24,
-    BGR24
-};
-
-/**
- * @brief 帧结构体，表示一帧图像数据
- */
-struct Frame {
-    // 图像数据
-    std::vector<uint8_t> data;
-    // 图像宽度
-    int width;
-    // 图像高度
-    int height;
-    // 像素格式
-    PixelFormat format;
-    // 时间戳（微秒）
-    int64_t timestamp;
-};
 
 /**
  * @brief 摄像头参数结构体

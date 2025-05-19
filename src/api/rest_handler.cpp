@@ -8,7 +8,11 @@ namespace cam_server {
 namespace api {
 
 // 构造函数
-RestHandler::RestHandler() : enable_api_key_(false), enable_cors_(false) {
+RestHandler::RestHandler(bool enable_cors, const std::string& cors_allowed_origins)
+    : enable_cors_(enable_cors)
+    , cors_allowed_origins_(cors_allowed_origins)
+    , enable_api_key_(false)
+    , api_key_("") {
 }
 
 // 析构函数
@@ -23,93 +27,84 @@ bool RestHandler::initialize(bool enable_api_key, const std::string& api_key) {
     return true;
 }
 
-// 注册路由处理函数
+// 注册路由
 bool RestHandler::registerRoute(const std::string& method, const std::string& path, RouteHandler handler) {
     if (method.empty() || path.empty() || !handler) {
         return false;
     }
-    
+
     std::lock_guard<std::mutex> lock(routes_mutex_);
-    
-    // 转换为大写方法
-    std::string upper_method = utils::StringUtils::toUpper(method);
-    
-    // 创建路由键
-    RouteKey key{upper_method, path};
-    
-    // 检查路由是否已存在
-    if (routes_.find(key) != routes_.end()) {
-        return false;
-    }
-    
-    // 注册路由
+    RouteKey key{method, path};
     routes_[key] = handler;
-    
     return true;
 }
 
 // 处理HTTP请求
 HttpResponse RestHandler::handleRequest(const HttpRequest& request) {
-    // 验证API密钥
-    if (enable_api_key_ && !validateApiKey(request)) {
-        HttpResponse response = createErrorResponse(401, "Unauthorized: Invalid API key");
-        addCorsHeaders(response, request);
-        return response;
+    std::cerr << "\n[REST][DEBUG] 处理REST请求:" << std::endl;
+    std::cerr << "  方法: " << request.method << std::endl;
+    std::cerr << "  路径: " << request.path << std::endl;
+
+    // 检查API密钥（如果启用）
+    if (enable_api_key_ && !api_key_.empty()) {
+        auto it = request.headers.find("X-API-Key");
+        if (it == request.headers.end() || it->second != api_key_) {
+            std::cerr << "[REST][ERROR] API密钥验证失败" << std::endl;
+            return createErrorResponse(401, "Unauthorized", "Invalid API key");
+        }
     }
-    
-    // 查找路由处理函数
-    std::lock_guard<std::mutex> lock(routes_mutex_);
-    
-    // 转换为大写方法
-    std::string upper_method = utils::StringUtils::toUpper(request.method);
-    
-    // 创建路由键
-    RouteKey key{upper_method, request.path};
-    
-    // 查找路由
-    auto it = routes_.find(key);
+
+    // 查找路由处理器
+    RouteKey route_key{request.method, request.path};
+    std::cerr << "[REST][DEBUG] 查找路由处理器: " << route_key.method << " " << route_key.path << std::endl;
+
+    auto it = routes_.find(route_key);
     if (it == routes_.end()) {
-        // 尝试查找通配符路由
-        bool found = false;
-        RouteHandler handler;
-        
+        std::cerr << "[REST][ERROR] 未找到路由处理器: " << route_key.method << " " << route_key.path << std::endl;
+        std::cerr << "[REST][DEBUG] 已注册的路由:" << std::endl;
         for (const auto& route : routes_) {
-            // 检查路径是否匹配通配符
-            if (route.first.method == upper_method && 
-                utils::StringUtils::endsWith(route.first.path, "*")) {
-                
-                std::string prefix = route.first.path.substr(0, route.first.path.length() - 1);
-                if (utils::StringUtils::startsWith(request.path, prefix)) {
-                    found = true;
-                    handler = route.second;
-                    break;
-                }
-            }
+            std::cerr << "  " << route.first.method << " " << route.first.path << std::endl;
         }
-        
-        if (!found) {
-            // 路由未找到
-            HttpResponse response = createErrorResponse(404, "Not Found: Route not registered");
-            addCorsHeaders(response, request);
-            return response;
-        }
-        
-        // 调用处理函数
-        HttpResponse response = handler(request);
-        addCorsHeaders(response, request);
-        return response;
+        return createErrorResponse(404, "Not Found", "Route not found");
     }
-    
-    // 调用处理函数
-    HttpResponse response = it->second(request);
-    addCorsHeaders(response, request);
-    return response;
+
+    std::cerr << "[REST][DEBUG] 找到路由处理器，开始处理请求" << std::endl;
+
+    try {
+        // 调用路由处理器
+        HttpResponse response = it->second(request);
+
+        std::cerr << "[REST][DEBUG] 请求处理完成:" << std::endl;
+        std::cerr << "  状态码: " << response.status_code << std::endl;
+        std::cerr << "  状态消息: " << response.status_message << std::endl;
+        std::cerr << "  内容类型: " << response.content_type << std::endl;
+        std::cerr << "  响应体长度: " << response.body.length() << std::endl;
+
+        // 添加CORS头
+        if (enable_cors_) {
+            response.headers["Access-Control-Allow-Origin"] = cors_allowed_origins_;
+            response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS";
+            response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, X-API-Key";
+            response.headers["Access-Control-Allow-Credentials"] = "true";
+            response.headers["Access-Control-Max-Age"] = "86400";
+        }
+
+        return response;
+    } catch (const std::exception& e) {
+        std::cerr << "[REST][ERROR] 处理请求时发生错误: " << e.what() << std::endl;
+        return createErrorResponse(500, "Internal Server Error", e.what());
+    }
 }
 
-// 设置CORS配置
-void RestHandler::setCorsConfig(bool enable_cors, const std::string& allowed_origins) {
-    enable_cors_ = enable_cors;
-    cors_allowed_origins_ = allowed_origins;
+// 获取已注册的路由列表
+std::vector<std::string> RestHandler::getRegisteredRoutes() const {
+    std::vector<std::string> routes;
+    for (const auto& route : routes_) {
+        std::stringstream ss;
+        ss << route.first.method << " " << route.first.path;
+        routes.push_back(ss.str());
+    }
+    return routes;
 }
 
 // 验证API密钥
@@ -197,33 +192,28 @@ void RestHandler::addCorsHeaders(HttpResponse& response, const HttpRequest& requ
     
     // 添加其他CORS头
     response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS";
-    response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, X-API-Key";
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, X-API-Key, Accept, Origin, DNT, X-CustomHeader, Keep-Alive, User-Agent, X-Requested-With, If-Modified-Since, Cache-Control";
     response.headers["Access-Control-Allow-Credentials"] = "true";
     response.headers["Access-Control-Max-Age"] = "86400"; // 24小时
 }
 
 // 创建错误响应
-HttpResponse RestHandler::createErrorResponse(int status_code, const std::string& message) {
+HttpResponse RestHandler::createErrorResponse(int status_code, const std::string& status_message, const std::string& error_message) {
     HttpResponse response;
     response.status_code = status_code;
-    
-    // 设置状态消息
-    switch (status_code) {
-        case 400: response.status_message = "Bad Request"; break;
-        case 401: response.status_message = "Unauthorized"; break;
-        case 403: response.status_message = "Forbidden"; break;
-        case 404: response.status_message = "Not Found"; break;
-        case 405: response.status_message = "Method Not Allowed"; break;
-        case 500: response.status_message = "Internal Server Error"; break;
-        default: response.status_message = "Unknown Error"; break;
-    }
-    
-    // 设置内容类型
+    response.status_message = status_message;
     response.content_type = "application/json";
-    
-    // 设置响应体
-    response.body = "{\"error\":" + std::to_string(status_code) + ",\"message\":\"" + message + "\"}";
-    
+    response.body = "{\"status\":\"error\",\"message\":\"" + error_message + "\"}";
+
+    // 添加CORS头
+    if (enable_cors_) {
+        response.headers["Access-Control-Allow-Origin"] = cors_allowed_origins_;
+        response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS";
+        response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, X-API-Key";
+        response.headers["Access-Control-Allow-Credentials"] = "true";
+        response.headers["Access-Control-Max-Age"] = "86400";
+    }
+
     return response;
 }
 

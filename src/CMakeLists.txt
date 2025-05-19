@@ -17,6 +17,7 @@ add_executable(cam_server ${MAIN_SOURCES})
 
 # 链接库
 target_link_libraries(cam_server
+    PRIVATE
     api_module
     camera_module
     video_module
@@ -32,15 +33,22 @@ target_link_libraries(cam_server
 )
 
 if(ROCKCHIP_MPP_FOUND)
-    target_link_libraries(cam_server ${ROCKCHIP_MPP_LIBRARIES})
+    target_link_libraries(cam_server
+        PRIVATE
+        ${ROCKCHIP_MPP_LIBRARIES}
+    )
 endif()
 
 if(LIBRGA_FOUND)
-    target_link_libraries(cam_server ${LIBRGA_LIBRARIES})
+    target_link_libraries(cam_server
+        PRIVATE
+        ${LIBRGA_LIBRARIES}
+    )
 endif()
 
 # 设置包含目录
-target_include_directories(cam_server PRIVATE
+target_include_directories(cam_server
+    PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/../include
 )

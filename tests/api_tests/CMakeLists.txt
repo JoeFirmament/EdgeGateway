@@ -21,6 +21,7 @@ target_link_libraries(static_page_test
     api_module
     utils_module
     monitor_module
+    system_module
     ${CURL_LIBRARIES}
     pthread
 )
@@ -51,6 +52,7 @@ target_link_libraries(simple_server_test
     api_module
     utils_module
     monitor_module
+    system_module
     pthread
 )
 

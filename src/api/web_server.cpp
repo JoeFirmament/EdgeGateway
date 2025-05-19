@@ -51,183 +51,46 @@ public:
         }
 
         LOG_INFO("正在初始化Mongoose管理器", "WebServer");
-        // 初始化Mongoose管理器
         mg_mgr_init(&mg_mgr_);
 
         // 创建监听地址
-        std::string listen_addr;
+        std::string listen_addr = std::string("http://0.0.0.0:") + std::to_string(config_.port);
         if (config_.use_https) {
-            listen_addr = "https://" + config_.address + ":" + std::to_string(config_.port);
-        } else {
-            listen_addr = "http://" + config_.address + ":" + std::to_string(config_.port);
+            listen_addr = std::string("https://0.0.0.0:") + std::to_string(config_.port);
         }
+
         LOG_INFO("Web服务器监听地址: " + listen_addr, "WebServer");
-
-        // 检查静态文件目录
-        LOG_INFO("静态文件目录: " + config_.static_files_dir, "WebServer");
-        struct stat st;
-        if (stat(config_.static_files_dir.c_str(), &st) != 0) {
-            LOG_WARNING("静态文件目录不存在: " + config_.static_files_dir, "WebServer");
-            try {
-                // 使用系统命令创建目录
-                std::string cmd = "mkdir -p " + config_.static_files_dir;
-                int result = ::system(cmd.c_str());
-                if (result == 0) {
-                    LOG_INFO("已创建静态文件目录: " + config_.static_files_dir, "WebServer");
-                } else {
-                    LOG_ERROR("无法创建静态文件目录，错误码: " + std::to_string(result), "WebServer");
-                }
-            } catch (const std::exception& e) {
-                LOG_ERROR("无法创建静态文件目录: " + std::string(e.what()), "WebServer");
-            }
-        }
-
+        std::cerr << "[WEB][DEBUG] 尝试监听地址: " << listen_addr << std::endl;
+        
         // 创建HTTP连接
-        LOG_INFO("正在创建HTTP连接...", "WebServer");
-        LOG_DEBUG_FULL("WEB", "正在创建HTTP连接: " + listen_addr);
-
-        // 检查mg_mgr_是否已初始化
-        LOG_DEBUG_FULL("WEB", "mg_mgr_初始化状态: " + std::string(mg_mgr_.conns ? "已初始化" : "未初始化"));
-
-        // 检查端口是否已被占用
-        LOG_DEBUG_FULL("WEB", "检查端口是否已被占用...");
-        std::string check_cmd = "netstat -tuln | grep " + std::to_string(config_.port);
-        int check_result = ::system(check_cmd.c_str());
-        LOG_DEBUG_FULL("WEB", "端口检查结果: " + std::to_string(check_result));
-
-        // 尝试创建HTTP连接
-        LOG_DEBUG_FULL("WEB", "尝试调用mg_http_listen...");
-        LOG_DEBUG_FULL("WEB", "监听地址: " + listen_addr);
-        LOG_DEBUG_FULL("WEB", "当前工作目录: " + utils::FileUtils::getCurrentWorkingDirectory());
-
-        // 检查mongoose.h是否存在
-        LOG_DEBUG_FULL("WEB", "检查mongoose.h是否存在...");
-        if (utils::FileUtils::fileExists("mongoose.h")) {
-            LOG_DEBUG_FULL("WEB", "mongoose.h存在");
-        } else {
-            LOG_DEBUG_FULL("WEB", "mongoose.h不存在");
-        }
-
-        struct mg_connection* nc = nullptr;
-        try {
-            LOG_DEBUG_FULL("WEB", "调用mg_http_listen前...");
-
-            // 打印更多调试信息
-            LOG_DEBUG_FULL("WEB", "mg_mgr_地址: " + std::to_string(reinterpret_cast<uintptr_t>(&mg_mgr_)));
-            LOG_DEBUG_FULL("WEB", "listen_addr: " + listen_addr);
-            LOG_DEBUG_FULL("WEB", "eventHandler地址: " + std::to_string(reinterpret_cast<uintptr_t>(reinterpret_cast<void*>(eventHandler))));
-
-            // 尝试使用不同的方式调用mg_http_listen
-            LOG_DEBUG_FULL("WEB", "尝试使用不同的方式调用mg_http_listen...");
-
-            // 方式1：使用原始方式
-            nc = mg_http_listen(&mg_mgr_, listen_addr.c_str(), eventHandler, NULL);
-            LOG_DEBUG_FULL("WEB", "调用mg_http_listen后，结果: " + std::string(nc ? "成功" : "失败"));
-
-            if (nc == nullptr) {
-                // 方式2：尝试使用不同的端口
-                std::string alt_addr = "http://0.0.0.0:8081";
-                LOG_DEBUG_FULL("WEB", "尝试使用替代地址: " + alt_addr);
-                nc = mg_http_listen(&mg_mgr_, alt_addr.c_str(), eventHandler, NULL);
-                LOG_DEBUG_FULL("WEB", "使用替代地址调用mg_http_listen后，结果: " + std::string(nc ? "成功" : "失败"));
-
-                if (nc != nullptr) {
-                    LOG_DEBUG_FULL("WEB", "使用替代地址成功");
-                    config_.port = 8081;
-                    listen_addr = alt_addr;
-                }
-            }
-        } catch (const std::exception& e) {
-            LOG_DEBUG_FULL("WEB", "mg_http_listen抛出异常: " + std::string(e.what()));
-        } catch (...) {
-            LOG_DEBUG_FULL("WEB", "mg_http_listen抛出未知异常");
-        }
-
+        struct mg_connection* nc = mg_http_listen(&mg_mgr_, listen_addr.c_str(), eventHandler, this);
         if (nc == nullptr) {
             LOG_ERROR("无法启动Web服务器: " + listen_addr, "WebServer");
-            LOG_DEBUG_FULL("WEB", "无法启动Web服务器: " + listen_addr + ", 错误: " + std::string(strerror(errno)));
-            LOG_DEBUG_FULL("WEB", "错误码: " + std::to_string(errno));
-
-            // 检查常见的错误
-            if (errno == EADDRINUSE) {
-                LOG_DEBUG_FULL("WEB", "错误: 地址已被使用");
-            } else if (errno == EACCES) {
-                LOG_DEBUG_FULL("WEB", "错误: 权限不足");
-            } else if (errno == EADDRNOTAVAIL) {
-                LOG_DEBUG_FULL("WEB", "错误: 地址不可用");
-            }
-
-            // 检查端口是否已被占用
-            LOG_DEBUG_FULL("WEB", "再次检查端口是否已被占用...");
-            std::string check_cmd = "netstat -tuln | grep " + std::to_string(config_.port);
-            int check_result = ::system(check_cmd.c_str());
-            LOG_DEBUG_FULL("WEB", "端口检查结果: " + std::to_string(check_result));
-
-            // 尝试使用不同的端口
-            LOG_DEBUG_FULL("WEB", "尝试使用不同的端口...");
-            int alt_port = config_.port + 1;
-            std::string alt_listen_addr;
-            if (config_.use_https) {
-                alt_listen_addr = "https://" + config_.address + ":" + std::to_string(alt_port);
-            } else {
-                alt_listen_addr = "http://" + config_.address + ":" + std::to_string(alt_port);
-            }
-            LOG_DEBUG_FULL("WEB", "尝试替代地址: " + alt_listen_addr);
-
-            try {
-                LOG_DEBUG_FULL("WEB", "尝试调用mg_http_listen使用替代端口...");
-                nc = mg_http_listen(&mg_mgr_, alt_listen_addr.c_str(), eventHandler, NULL);
-                LOG_DEBUG_FULL("WEB", "调用mg_http_listen后，结果: " + std::string(nc ? "成功" : "失败"));
-
-                if (nc != nullptr) {
-                    LOG_DEBUG_FULL("WEB", "使用替代端口成功: " + std::to_string(alt_port));
-                    config_.port = alt_port;
-                    listen_addr = alt_listen_addr;
-                } else {
-                    LOG_DEBUG_FULL("WEB", "使用替代端口失败: " + std::to_string(alt_port) + ", 错误: " + std::string(strerror(errno)));
-                    LOG_DEBUG_FULL("WEB", "错误码: " + std::to_string(errno));
-                }
-            } catch (const std::exception& e) {
-                LOG_DEBUG_FULL("WEB", "尝试替代端口时抛出异常: " + std::string(e.what()));
-            } catch (...) {
-                LOG_DEBUG_FULL("WEB", "尝试替代端口时抛出未知异常");
-            }
-
-            if (nc == nullptr) {
-                mg_mgr_free(&mg_mgr_);
-                return false;
-            }
+            mg_mgr_free(&mg_mgr_);
+            return false;
         }
-        LOG_INFO("HTTP连接创建成功", "WebServer");
-        std::cerr << "[WEB] HTTP连接创建成功" << std::endl;
+
+        std::cerr << "[WEB][DEBUG] Web服务器监听成功" << std::endl;
+
+        // 设置CORS头
+        const char* cors_headers = "Access-Control-Allow-Origin: *\r\n"
+                                 "Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS\r\n"
+                                 "Access-Control-Allow-Headers: Content-Type, Authorization, X-API-Key, Accept, Origin, DNT, X-CustomHeader, Keep-Alive, User-Agent, X-Requested-With, If-Modified-Since, Cache-Control\r\n"
+                                 "Access-Control-Allow-Credentials: true\r\n"
+                                 "Access-Control-Max-Age: 86400\r\n";
+
+        // 设置连接属性
         nc->fn_data = this;
 
-        // 配置SSL
-        if (config_.use_https) {
-            LOG_INFO("正在配置SSL...", "WebServer");
-            struct mg_tls_opts opts = {};
-            opts.cert = mg_str(config_.ssl_cert_path.c_str());
-            opts.key = mg_str(config_.ssl_key_path.c_str());
-            mg_tls_init(nc, &opts);
-            LOG_INFO("SSL配置完成", "WebServer");
-        }
-
-        // 启动服务器线程
-        LOG_INFO("正在启动服务器线程...", "WebServer");
+        // 启动事件循环线程
         is_running_ = true;
         server_thread_ = std::thread([this]() {
-            LOG_INFO("服务器线程已启动", "WebServer");
             while (is_running_) {
-                try {
-                    mg_mgr_poll(&mg_mgr_, 1000);
-                } catch (const std::exception& e) {
-                    LOG_ERROR("服务器线程异常: " + std::string(e.what()), "WebServer");
-                }
+                mg_mgr_poll(&mg_mgr_, 1000);  // 1秒超时
             }
-            LOG_INFO("服务器线程已退出", "WebServer");
         });
 
-        LOG_INFO("Web服务器已启动: " + listen_addr, "WebServer");
+        LOG_INFO("Web服务器启动成功", "WebServer");
         return true;
     }
 
@@ -272,42 +135,94 @@ public:
         // 增加请求计数
         server_->request_count_++;
 
-        LOG_DEBUG_FULL("WEB", "收到HTTP请求: " + std::string(hm->method.buf, hm->method.len) + " " +
-                      std::string(hm->uri.buf, hm->uri.len));
+        try {
+            // 解析请求
+            HttpRequest request;
+            parseHttpRequest(hm, request);
 
-        // 解析请求
-        HttpRequest request;
-        parseHttpRequest(hm, request);
+            // 打印请求信息
+            std::cerr << "\n[WEB][DEBUG] 收到HTTP请求:" << std::endl;
+            std::cerr << "  方法: " << request.method << std::endl;
+            std::cerr << "  路径: " << request.path << std::endl;
+            std::cerr << "  查询参数: " << std::endl;
+            for (const auto& param : request.query_params) {
+                std::cerr << "    " << param.first << ": " << param.second << std::endl;
+            }
+            std::cerr << "  请求头: " << std::endl;
+            for (const auto& header : request.headers) {
+                std::cerr << "    " << header.first << ": " << header.second << std::endl;
+            }
+            std::cerr << "  请求体长度: " << request.body.length() << std::endl;
 
-        LOG_DEBUG_FULL("WEB", "解析后的请求: 方法=" + request.method + ", 路径=" + request.path);
+            // 添加请求超时处理
+            request.headers["X-Request-Timeout"] = "30000";  // 30秒超时
 
-        // 检查是否是静态文件请求
-        LOG_DEBUG_FULL("WEB", "检查是否是静态文件请求...");
-        if (handleStaticFileRequest(nc, hm, request)) {
-            LOG_DEBUG_FULL("WEB", "已处理静态文件请求: " + request.path);
-            return;
+            // 处理OPTIONS请求（CORS预检请求）
+            if (request.method == "OPTIONS") {
+                handleOptionsRequest(nc);
+                return;
+            }
+
+            // 检查是否是静态文件请求
+            if (!(request.path.substr(0, 5) == "/api/") && handleStaticFileRequest(nc, hm, request)) {
+                std::cerr << "[WEB][DEBUG] 已处理静态文件请求: " << request.path << std::endl;
+                return;
+            }
+
+            // 处理REST请求
+            std::cerr << "[WEB][DEBUG] 转发到REST处理器: " << request.path << std::endl;
+            HttpResponse response = rest_handler_->handleRequest(request);
+
+            // 打印响应信息
+            std::cerr << "[WEB][DEBUG] REST处理器响应:" << std::endl;
+            std::cerr << "  状态码: " << response.status_code << std::endl;
+            std::cerr << "  状态消息: " << response.status_message << std::endl;
+            std::cerr << "  内容类型: " << response.content_type << std::endl;
+            std::cerr << "  响应体长度: " << response.body.length() << std::endl;
+
+            // 处理流式响应
+            if (response.is_streaming) {
+                handleStreamingResponse(nc, response);
+                return;
+            }
+
+            // 发送响应
+            sendHttpResponse(nc, response);
+        } catch (const std::exception& e) {
+            // 错误计数增加
+            server_->error_count_++;
+            
+            std::cerr << "[WEB][ERROR] 处理请求时发生错误: " << e.what() << std::endl;
+            
+            // 发送错误响应
+            HttpResponse error_response;
+            error_response.status_code = 500;
+            error_response.status_message = "Internal Server Error";
+            error_response.content_type = "application/json";
+            error_response.body = "{\"status\":\"error\",\"message\":\"" + std::string(e.what()) + "\"}";
+            
+            // 添加CORS头
+            error_response.headers["Access-Control-Allow-Origin"] = "*";
+            error_response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS";
+            error_response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, X-API-Key, Accept, Origin, DNT, X-CustomHeader, Keep-Alive, User-Agent, X-Requested-With, If-Modified-Since, Cache-Control";
+            error_response.headers["Access-Control-Allow-Credentials"] = "true";
+            error_response.headers["Access-Control-Max-Age"] = "86400";
+            
+            sendHttpResponse(nc, error_response);
+            
+            LOG_ERROR("处理HTTP请求时发生错误: " + std::string(e.what()), "WebServer");
         }
+    }
 
-        LOG_DEBUG_FULL("WEB", "不是静态文件请求，尝试处理REST请求: " + request.path);
-
-        // 处理REST请求
-        HttpResponse response = rest_handler_->handleRequest(request);
-
-        LOG_DEBUG_FULL("WEB", "REST请求处理结果: 状态码=" + std::to_string(response.status_code) +
-                      ", 内容类型=" + response.content_type +
-                      ", 是否流式=" + (response.is_streaming ? "是" : "否"));
-
-        // 处理流式响应
-        if (response.is_streaming) {
-            LOG_DEBUG_FULL("WEB", "处理流式响应...");
-            handleStreamingResponse(nc, response);
-            return;
-        }
-
-        // 发送响应
-        LOG_DEBUG_FULL("WEB", "发送HTTP响应...");
-        sendHttpResponse(nc, response);
-        LOG_DEBUG_FULL("WEB", "HTTP响应已发送");
+    // 处理OPTIONS请求
+    void handleOptionsRequest(struct mg_connection* nc) {
+        const char* cors_headers = "Access-Control-Allow-Origin: *\r\n"
+                                 "Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS\r\n"
+                                 "Access-Control-Allow-Headers: Content-Type, Authorization, X-API-Key, Accept, Origin, DNT, X-CustomHeader, Keep-Alive, User-Agent, X-Requested-With, If-Modified-Since, Cache-Control\r\n"
+                                 "Access-Control-Allow-Credentials: true\r\n"
+                                 "Access-Control-Max-Age: 86400\r\n";
+        
+        mg_http_reply(nc, 204, cors_headers, "");
     }
 
     // 解析HTTP请求
@@ -374,42 +289,15 @@ public:
             LOG_DEBUG_FULL("WEB", "请求根路径，使用默认文件: /index.html");
         }
 
-        std::string file_path = config_.static_files_dir + path;
-        LOG_DEBUG_FULL("WEB", "完整文件路径: " + file_path);
-
-        // 检查文件是否存在
-        struct stat st;
-        if (stat(file_path.c_str(), &st) != 0) {
-            LOG_DEBUG_FULL("WEB", "文件不存在: " + file_path + ", 错误: " + std::string(strerror(errno)));
-            return false;
-        }
-
-        if (!S_ISREG(st.st_mode)) {
-            LOG_DEBUG_FULL("WEB", "路径不是常规文件: " + file_path);
-            return false;
-        }
-
-        LOG_DEBUG_FULL("WEB", "文件存在，大小: " + std::to_string(st.st_size) + " 字节");
-
-        // 获取文件扩展名
-        std::string ext;
-        size_t dot_pos = file_path.find_last_of('.');
-        if (dot_pos != std::string::npos) {
-            ext = file_path.substr(dot_pos);
-        }
-        std::string content_type = getContentTypeFromExtension(ext);
-        LOG_DEBUG_FULL("WEB", "文件扩展名: " + ext + ", 内容类型: " + content_type);
-
-        // 发送文件
+        // 设置Mongoose选项
         struct mg_http_serve_opts opts;
         memset(&opts, 0, sizeof(opts));
-        // 设置额外的HTTP头，包括Content-Type
-        std::string extra_headers = "Content-Type: " + content_type + "\r\n";
-        opts.extra_headers = extra_headers.c_str();
+        opts.root_dir = config_.static_files_dir.c_str();
+        opts.extra_headers = "Access-Control-Allow-Origin: *\r\n";
 
-        LOG_DEBUG_FULL("WEB", "正在发送文件: " + file_path);
-        mg_http_serve_file(nc, hm, file_path.c_str(), &opts);
-        LOG_DEBUG_FULL("WEB", "文件发送完成: " + file_path);
+        LOG_DEBUG_FULL("WEB", "正在发送文件，根目录: " + config_.static_files_dir + ", 路径: " + path);
+        mg_http_serve_dir(nc, hm, &opts);
+        LOG_DEBUG_FULL("WEB", "文件发送完成");
 
         return true;
     }
@@ -435,66 +323,33 @@ public:
 
     // 处理流式响应
     void handleStreamingResponse(struct mg_connection* nc, const HttpResponse& response) {
-        if (!response.stream_callback) {
-            // 如果没有流回调，发送普通响应
-            sendHttpResponse(nc, response);
-            return;
-        }
-
-        // 设置连接为流式响应
-        nc->is_resp = 1;  // 标记为已响应
-
-        // 构建响应头
-        std::string headers;
+        // 设置响应头
+        mg_printf(nc, "HTTP/1.1 %d %s\r\n", response.status_code, response.status_message.c_str());
+        mg_printf(nc, "Content-Type: %s\r\n", response.content_type.c_str());
+        
+        // 添加自定义响应头
         for (const auto& header : response.headers) {
-            headers += header.first + ": " + header.second + "\r\n";
+            mg_printf(nc, "%s: %s\r\n", header.first.c_str(), header.second.c_str());
         }
+        
+        // 添加CORS头
+        mg_printf(nc, "Access-Control-Allow-Origin: *\r\n");
+        mg_printf(nc, "Access-Control-Allow-Methods: GET, POST, OPTIONS\r\n");
+        mg_printf(nc, "Access-Control-Allow-Headers: Content-Type\r\n");
+        mg_printf(nc, "Access-Control-Max-Age: 3600\r\n");
+        
+        mg_printf(nc, "\r\n");  // 结束响应头
 
-        // 设置内容类型
-        if (!response.content_type.empty()) {
-            headers += "Content-Type: " + response.content_type + "\r\n";
-        } else {
-            headers += "Content-Type: application/octet-stream\r\n";
+        // 如果有流回调，设置为长连接模式
+        if (response.stream_callback) {
+            // 创建写回调函数
+            auto write_callback = [nc](const std::vector<uint8_t>& data) {
+                mg_send(nc, data.data(), data.size());
+            };
+
+            // 调用流回调
+            response.stream_callback(write_callback);
         }
-
-        // 设置传输编码为分块
-        headers += "Transfer-Encoding: chunked\r\n";
-
-        // 发送响应头
-        mg_printf(nc, "HTTP/1.1 %d %s\r\n%s\r\n",
-                 response.status_code,
-                 response.status_message.c_str(),
-                 headers.c_str());
-
-        // 保存连接信息
-        std::string client_id = std::to_string(reinterpret_cast<uintptr_t>(nc));
-
-        {
-            std::lock_guard<std::mutex> lock(streaming_connections_mutex_);
-            streaming_connections_[client_id] = nc;
-        }
-
-        // 启动流回调
-        response.stream_callback([this, client_id](const std::vector<uint8_t>& data) {
-            sendStreamData(client_id, data);
-        });
-    }
-
-    // 发送流数据
-    void sendStreamData(const std::string& client_id, const std::vector<uint8_t>& data) {
-        std::lock_guard<std::mutex> lock(streaming_connections_mutex_);
-
-        auto it = streaming_connections_.find(client_id);
-        if (it == streaming_connections_.end()) {
-            return;
-        }
-
-        struct mg_connection* nc = it->second;
-
-        // 发送分块数据
-        mg_printf(nc, "%lx\r\n", data.size());
-        mg_send(nc, data.data(), data.size());
-        mg_send(nc, "\r\n", 2);
     }
 
     // 处理连接关闭

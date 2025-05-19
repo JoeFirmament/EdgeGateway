@@ -2,6 +2,7 @@
 #include "monitor/logger.h"
 #include "utils/string_utils.h"
 #include "utils/file_utils.h"
+#include "camera/format_utils.h"
 
 #include <fcntl.h>
 #include <unistd.h>
@@ -14,6 +15,7 @@
 #include <set>
 #include <chrono>
 #include <iostream>  // 添加iostream头文件，用于std::cerr
+#include <cstring>   // 添加cstring头文件，用于memcpy
 
 namespace cam_server {
 namespace camera {
@@ -102,6 +104,16 @@ bool V4L2Camera::open(const std::string& device_path, int width, int height, int
     std::cerr << "[V4L2][v4l2_camera.cpp:open] 当前用户: " << getenv("USER") << std::endl;
     std::cerr << "[V4L2][v4l2_camera.cpp:open] 当前用户ID: " << getuid() << std::endl;
     std::cerr << "[V4L2][v4l2_camera.cpp:open] 当前组ID: " << getgid() << std::endl;
+    
+    // 打印部分关键环境变量
+    std::cerr << "[V4L2][v4l2_camera.cpp:open] 关键环境变量:" << std::endl;
+    const char* env_vars[] = {"PATH", "LD_LIBRARY_PATH", "USER", "HOME", "SHELL", nullptr};
+    for (const char** var = env_vars; *var != nullptr; var++) {
+        const char* value = getenv(*var);
+        if (value) {
+            std::cerr << "  " << *var << "=" << value << std::endl;
+        }
+    }
 
     // 检查设备文件是否存在
     struct stat st;
@@ -179,15 +191,16 @@ bool V4L2Camera::open(const std::string& device_path, int width, int height, int
     std::cerr << "[V4L2][v4l2_camera.cpp:open] 支持的分辨率数量: " << device_info_.supported_resolutions.size() << std::endl;
     std::cerr << "[V4L2][v4l2_camera.cpp:open] 支持的格式数量: " << device_info_.supported_formats.size() << std::endl;
 
-    // 设置视频格式
-    std::cerr << "[V4L2][v4l2_camera.cpp:open] 设置视频格式: " << width << "x" << height << ", 格式: YUYV" << std::endl;
-    if (!setVideoFormat(width, height, V4L2_PIX_FMT_YUYV)) {
-        std::cerr << "[V4L2][v4l2_camera.cpp:open] 无法设置视频格式" << std::endl;
-        LOG_ERROR("无法设置视频格式", "V4L2Camera");
+    // 设置视频格式，优先使用MJPEG格式
+    if (!setVideoFormat(width, height, V4L2_PIX_FMT_MJPEG)) {
+        std::cerr << "[V4L2][v4l2_camera.cpp:open] 无法设置MJPEG格式" << std::endl;
+        LOG_ERROR("无法设置MJPEG格式，摄像头可能不支持MJPEG格式", "V4L2Camera");
         ::close(fd_);
         fd_ = -1;
         return false;
     }
+    current_params_.format = PixelFormat::MJPEG;
+    LOG_INFO("成功设置MJPEG格式", "V4L2Camera");
     std::cerr << "[V4L2][v4l2_camera.cpp:open] 视频格式设置成功" << std::endl;
 
     // 设置帧率
@@ -218,7 +231,7 @@ bool V4L2Camera::open(const std::string& device_path, int width, int height, int
     current_params_.width = width;
     current_params_.height = height;
     current_params_.fps = fps;
-    current_params_.format = PixelFormat::YUYV;
+    current_params_.format = PixelFormat::MJPEG;
 
     LOG_INFO("成功打开摄像头设备: " + device_path, "V4L2Camera");
     std::cerr << "[V4L2][v4l2_camera.cpp:open] 成功打开摄像头设备: " << device_path << std::endl;
@@ -515,31 +528,45 @@ void V4L2Camera::queryCapabilities(int fd, CameraDeviceInfo& deviceInfo) {
 }
 
 bool V4L2Camera::setVideoFormat(int width, int height, uint32_t pixelformat) {
-    if (fd_ < 0) {
-        return false;
-    }
-
-    // 设置格式
     struct v4l2_format fmt;
     memset(&fmt, 0, sizeof(fmt));
     fmt.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
     fmt.fmt.pix.width = width;
     fmt.fmt.pix.height = height;
     fmt.fmt.pix.pixelformat = pixelformat;
-    fmt.fmt.pix.field = V4L2_FIELD_ANY;
+    fmt.fmt.pix.field = V4L2_FIELD_NONE;
 
     if (ioctl(fd_, VIDIOC_S_FMT, &fmt) < 0) {
         LOG_ERROR("无法设置视频格式", "V4L2Camera");
         return false;
     }
 
-    // 检查实际设置的格式
+    // 验证设置是否成功
     if (fmt.fmt.pix.width != width || fmt.fmt.pix.height != height) {
-        LOG_WARNING("实际分辨率与请求不符: " +
-                   std::to_string(fmt.fmt.pix.width) + "x" +
-                   std::to_string(fmt.fmt.pix.height),
-                   "V4L2Camera");
+        LOG_WARNING("摄像头不支持请求的分辨率: " + std::to_string(width) + "x" + std::to_string(height) +
+                   "，实际分辨率: " + std::to_string(fmt.fmt.pix.width) + "x" + 
+                   std::to_string(fmt.fmt.pix.height), "V4L2Camera");
     }
+
+    // 验证格式是否成功设置
+    if (fmt.fmt.pix.pixelformat != pixelformat) {
+        LOG_ERROR("无法设置请求的像素格式: " + FormatUtils::getV4L2FormatName(pixelformat) + 
+                 "，实际格式: " + FormatUtils::getV4L2FormatName(fmt.fmt.pix.pixelformat), "V4L2Camera");
+        return false;
+    }
+
+    // 更新当前参数
+    current_params_.width = fmt.fmt.pix.width;
+    current_params_.height = fmt.fmt.pix.height;
+    current_params_.format = FormatUtils::v4l2FormatToPixelFormat(fmt.fmt.pix.pixelformat);
+
+    // 打印格式信息
+    std::cerr << "[V4L2][v4l2_camera.cpp:setVideoFormat] 视频格式设置结果:" << std::endl;
+    std::cerr << "  - 请求分辨率: " << width << "x" << height << std::endl;
+    std::cerr << "  - 实际分辨率: " << fmt.fmt.pix.width << "x" << fmt.fmt.pix.height << std::endl;
+    std::cerr << "  - 请求格式: " << FormatUtils::getV4L2FormatName(pixelformat) << std::endl;
+    std::cerr << "  - 实际格式: " << FormatUtils::getV4L2FormatName(fmt.fmt.pix.pixelformat) << std::endl;
+    std::cerr << "  - 当前格式: " << FormatUtils::getPixelFormatName(current_params_.format) << std::endl;
 
     return true;
 }
@@ -678,73 +705,50 @@ void V4L2Camera::captureThreadFunc() {
     }
 }
 
-void V4L2Camera::processFrame(const void* data, size_t size, const struct v4l2_buffer& buf) {
+void V4L2Camera::processFrame(const void* data, size_t size, const v4l2_buffer& buf) {
+    std::cerr << "\\n[V4L2][v4l2_camera.cpp:processFrame] 处理新帧:" << std::endl;
+    std::cerr << "  - 缓冲区大小: " << size << " 字节" << std::endl;
+    std::cerr << "  - 当前格式: " << static_cast<int>(current_params_.format) << std::endl;
+    std::cerr << "  - 分辨率: " << current_params_.width << "x" << current_params_.height << std::endl;
+    std::cerr << "  - 时间戳: " << buf.timestamp.tv_sec << "." << buf.timestamp.tv_usec << std::endl;
+
     // 创建帧对象
     Frame frame;
-    frame.width = current_params_.width;
-    frame.height = current_params_.height;
-    frame.format = current_params_.format;
-    frame.timestamp = static_cast<int64_t>(buf.timestamp.tv_sec) * 1000000 + buf.timestamp.tv_usec;
+    frame.setWidth(current_params_.width);
+    frame.setHeight(current_params_.height);
+    frame.setFormat(current_params_.format);  // 使用当前设置的格式
+    frame.setTimestamp(buf.timestamp.tv_sec * 1000000LL + buf.timestamp.tv_usec);
 
     // 复制数据
-    frame.data.resize(size);
-    memcpy(frame.data.data(), data, size);
+    frame.getData().resize(size);
+    std::memcpy(frame.getData().data(), data, size);
 
-    // 如果有回调函数，调用回调
+    std::cerr << "[V4L2][v4l2_camera.cpp:processFrame] 帧对象创建完成:" << std::endl;
+    std::cerr << "  - 帧大小: " << frame.getData().size() << " 字节" << std::endl;
+    std::cerr << "  - 帧格式: " << static_cast<int>(frame.getFormat()) << std::endl;
+    std::cerr << "  - 帧分辨率: " << frame.getWidth() << "x" << frame.getHeight() << std::endl;
+
+    // 调用回调函数
     if (frame_callback_) {
+        std::cerr << "[V4L2][v4l2_camera.cpp:processFrame] 调用帧回调函数" << std::endl;
         frame_callback_(frame);
     }
 
-    // 将帧加入队列
+    // 将帧添加到队列
     {
         std::lock_guard<std::mutex> lock(frame_queue_mutex_);
-
-        // 限制队列大小，避免内存溢出
-        if (frame_queue_.size() >= 5) {
-            frame_queue_.pop();
-        }
-
-        frame_queue_.push(frame);
+        frame_queue_.push(std::move(frame));
         frame_queue_cond_.notify_one();
     }
+    std::cerr << "[V4L2][v4l2_camera.cpp:processFrame] 帧已添加到队列" << std::endl;
 }
 
 PixelFormat V4L2Camera::v4l2FormatToPixelFormat(uint32_t v4l2_format) const {
-    switch (v4l2_format) {
-        case V4L2_PIX_FMT_YUYV:
-            return PixelFormat::YUYV;
-        case V4L2_PIX_FMT_MJPEG:
-            return PixelFormat::MJPEG;
-        case V4L2_PIX_FMT_H264:
-            return PixelFormat::H264;
-        case V4L2_PIX_FMT_NV12:
-            return PixelFormat::NV12;
-        case V4L2_PIX_FMT_RGB24:
-            return PixelFormat::RGB24;
-        case V4L2_PIX_FMT_BGR24:
-            return PixelFormat::BGR24;
-        default:
-            return PixelFormat::UNKNOWN;
-    }
+    return FormatUtils::v4l2FormatToPixelFormat(v4l2_format);
 }
 
 uint32_t V4L2Camera::pixelFormatToV4L2Format(PixelFormat format) const {
-    switch (format) {
-        case PixelFormat::YUYV:
-            return V4L2_PIX_FMT_YUYV;
-        case PixelFormat::MJPEG:
-            return V4L2_PIX_FMT_MJPEG;
-        case PixelFormat::H264:
-            return V4L2_PIX_FMT_H264;
-        case PixelFormat::NV12:
-            return V4L2_PIX_FMT_NV12;
-        case PixelFormat::RGB24:
-            return V4L2_PIX_FMT_RGB24;
-        case PixelFormat::BGR24:
-            return V4L2_PIX_FMT_BGR24;
-        default:
-            return V4L2_PIX_FMT_YUYV;  // 默认使用YUYV
-    }
+    return FormatUtils::pixelFormatToV4L2Format(format);
 }
 
 } // namespace camera

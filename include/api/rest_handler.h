@@ -1,11 +1,12 @@
-#ifndef REST_HANDLER_H
-#define REST_HANDLER_H
+#pragma once
 
-#include <string>
+#include "api/http_types.h"
 #include <functional>
 #include <unordered_map>
-#include <memory>
 #include <mutex>
+#include <string>
+#include <vector>
+#include <iostream>
 
 namespace cam_server {
 namespace api {
@@ -61,16 +62,16 @@ public:
     /**
      * @brief 构造函数
      */
-    RestHandler();
+    RestHandler(bool enable_cors = false, const std::string& cors_allowed_origins = "*");
 
     /**
      * @brief 析构函数
      */
-    ~RestHandler();
+    virtual ~RestHandler();
 
     /**
-     * @brief 初始化处理器
-     * @param enable_api_key 是否启用API密钥认证
+     * @brief 初始化REST处理器
+     * @param enable_api_key 是否启用API密钥
      * @param api_key API密钥
      * @return 是否初始化成功
      */
@@ -93,11 +94,24 @@ public:
     HttpResponse handleRequest(const HttpRequest& request);
 
     /**
-     * @brief 设置CORS配置
-     * @param enable_cors 是否启用CORS
-     * @param allowed_origins 允许的源
+     * @brief 获取已注册的路由列表
+     * @return 路由列表
      */
-    void setCorsConfig(bool enable_cors, const std::string& allowed_origins);
+    std::vector<std::string> getRegisteredRoutes() const;
+
+    /**
+     * @brief 启用/禁用CORS
+     * @param enable 是否启用CORS
+     */
+    void enableCors(bool enable) { enable_cors_ = enable; }
+    void setCorsAllowedOrigins(const std::string& origins) { cors_allowed_origins_ = origins; }
+
+    /**
+     * @brief 启用/禁用API密钥验证
+     * @param enable 是否启用API密钥验证
+     */
+    void enableApiKey(bool enable) { enable_api_key_ = enable; }
+    void setApiKey(const std::string& key) { api_key_ = key; }
 
 private:
     // 路由键结构体
@@ -127,7 +141,7 @@ private:
     // 添加CORS头
     void addCorsHeaders(HttpResponse& response, const HttpRequest& request) const;
     // 创建错误响应
-    HttpResponse createErrorResponse(int status_code, const std::string& message);
+    HttpResponse createErrorResponse(int status_code, const std::string& status_message, const std::string& error_message);
 
     // 路由表
     std::unordered_map<RouteKey, RouteHandler, RouteKeyHash> routes_;
@@ -145,5 +159,3 @@ private:
 
 } // namespace api
 } // namespace cam_server
-
-#endif // REST_HANDLER_H

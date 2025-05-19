@@ -12,6 +12,7 @@
 #include <linux/videodev2.h>
 
 #include "camera_device.h"
+#include "camera/format_utils.h"
 
 namespace cam_server {
 namespace camera {

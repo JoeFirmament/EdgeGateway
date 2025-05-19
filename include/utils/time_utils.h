@@ -42,18 +42,25 @@ public:
     }
 
     /**
+     * @brief 获取当前时间戳
+     * @return 当前时间戳
+     */
+    static int64_t getCurrentTimestamp() {
+        return std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::system_clock::now().time_since_epoch()
+        ).count();
+    }
+
+    /**
      * @brief 获取当前时间字符串
      * @param format 时间格式
      * @return 当前时间字符串
      */
     static std::string getCurrentTimeString(const std::string& format = "%Y-%m-%d %H:%M:%S") {
         auto now = std::chrono::system_clock::now();
-        auto now_time_t = std::chrono::system_clock::to_time_t(now);
-        struct tm now_tm;
-        localtime_r(&now_time_t, &now_tm);
-
+        auto time_t_now = std::chrono::system_clock::to_time_t(now);
         char buffer[100];
-        strftime(buffer, sizeof(buffer), format.c_str(), &now_tm);
+        std::strftime(buffer, sizeof(buffer), format.c_str(), std::localtime(&time_t_now));
         return std::string(buffer);
     }
 
