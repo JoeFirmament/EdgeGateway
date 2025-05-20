@@ -1,5 +1,5 @@
-#ifndef LOGGER_H
-#define LOGGER_H
+#ifndef CAM_SERVER_MONITOR_LOGGER_H
+#define CAM_SERVER_MONITOR_LOGGER_H
 
 #include <string>
 #include <vector>
@@ -12,6 +12,10 @@
 #include <atomic>
 #include <condition_variable>
 #include <fstream>
+#include <iostream>
+#include <iomanip>
+#include <map>
+#include <ctime>
 
 namespace cam_server {
 namespace monitor {
@@ -25,7 +29,7 @@ enum class LogLevel {
     INFO,       // 信息
     WARNING,    // 警告
     ERROR,      // 错误
-    CRITICAL    // 严重
+    FATAL       // 致命错误
 };
 
 /**
@@ -48,12 +52,14 @@ struct LogEntry {
     int line;
     // 函数名
     std::string function;
+    // 日志ID（用于排序和去重）
+    uint64_t log_id;
 };
 
 /**
  * @brief 日志配置结构体
  */
-struct LoggerConfig {
+struct LogConfig {
     // 日志文件路径
     std::string log_file;
     // 最小日志级别
@@ -62,6 +68,8 @@ struct LoggerConfig {
     bool console_output;
     // 是否输出到文件
     bool file_output;
+    // 日期格式
+    std::string date_format;
     // 是否包含时间戳
     bool include_timestamp;
     // 是否包含日志级别
@@ -70,19 +78,24 @@ struct LoggerConfig {
     bool include_source;
     // 是否包含线程ID
     bool include_thread_id;
-    // 是否包含文件和行号
+    // 是否包含文件和行号信息
     bool include_file_line;
     // 是否包含函数名
     bool include_function;
     // 最大日志文件大小（字节）
-    int64_t max_file_size;
+    size_t max_file_size;
     // 最大日志文件数量
     int max_file_count;
-    // 是否异步日志
+    // 是否使用异步日志
     bool async_logging;
     // 异步日志队列大小
     int async_queue_size;
 };
+
+/**
+ * @brief 日志回调函数类型
+ */
+using LogCallback = std::function<void(const LogEntry&)>;
 
 /**
  * @brief 日志器类
@@ -100,7 +113,19 @@ public:
      * @param config 日志配置
      * @return 是否初始化成功
      */
-    bool initialize(const LoggerConfig& config);
+    bool initialize(const LogConfig& config);
+
+    /**
+     * @brief 获取日志配置
+     * @return 日志配置
+     */
+    LogConfig getConfig() const;
+
+    /**
+     * @brief 设置日志回调函数
+     * @param callback 日志回调函数
+     */
+    void setLogCallback(LogCallback callback);
 
     /**
      * @brief 写入日志
@@ -170,46 +195,27 @@ public:
               const std::string& file = "", int line = 0, const std::string& function = "");
 
     /**
-     * @brief 写入严重日志
+     * @brief 写入致命错误日志
      * @param message 日志消息
      * @param source 日志源
      * @param file 文件名
      * @param line 行号
      * @param function 函数名
      */
-    void critical(const std::string& message, const std::string& source = "",
-                 const std::string& file = "", int line = 0, const std::string& function = "");
-
-    /**
-     * @brief 设置日志回调函数
-     * @param callback 日志回调函数
-     */
-    void setLogCallback(std::function<void(const LogEntry&)> callback);
-
-    /**
-     * @brief 获取日志配置
-     * @return 日志配置
-     */
-    LoggerConfig getConfig() const;
-
-    /**
-     * @brief 更新日志配置
-     * @param config 日志配置
-     * @return 是否成功更新
-     */
-    bool updateConfig(const LoggerConfig& config);
-
-    /**
-     * @brief 刷新日志
-     */
-    void flush();
+    void fatal(const std::string& message, const std::string& source = "",
+               const std::string& file = "", int line = 0, const std::string& function = "");
 
     /**
      * @brief 获取日志级别名称
      * @param level 日志级别
      * @return 日志级别名称
      */
-    static std::string getLevelName(LogLevel level);
+    std::string getLevelName(LogLevel level) const;
+
+    /**
+     * @brief 刷新日志
+     */
+    void flush();
 
 private:
     // 私有构造函数，防止外部创建实例
@@ -220,47 +226,94 @@ private:
     // 析构函数
     ~Logger();
 
-    // 格式化日志条目
-    std::string formatLogEntry(const LogEntry& entry) const;
-    // 写入日志文件
-    void writeToFile(const std::string& formatted_entry);
-    // 写入控制台
-    void writeToConsole(const std::string& formatted_entry, LogLevel level);
-    // 检查日志文件大小并轮转
+    /**
+     * @brief 格式化日志条目到缓冲区
+     * @param entry 日志条目
+     * @param buffer 输出缓冲区
+     * @param buffer_size 缓冲区大小
+     */
+    void formatLogEntryToBuffer(const LogEntry& entry, char* buffer, size_t buffer_size);
+
+    /**
+     * @brief 写入日志文件
+     * @param formatted_entry 格式化后的日志条目
+     */
+    void writeToFile(const char* formatted_entry);
+
+    /**
+     * @brief 写入控制台
+     * @param formatted_entry 格式化后的日志条目
+     * @param level 日志级别
+     */
+    void writeToConsole(const char* formatted_entry, LogLevel level);
+
+    /**
+     * @brief 检查日志文件大小并轮转
+     */
     void checkAndRotateLogFile();
-    // 启动异步日志线程
+
+    /**
+     * @brief 启动异步日志线程
+     */
     void startAsyncLogging();
-    // 停止异步日志线程
+
+    /**
+     * @brief 停止异步日志线程
+     */
     void stopAsyncLogging();
-    // 异步日志线程函数
+
+    /**
+     * @brief 异步日志线程函数
+     */
     void asyncLoggingThreadFunc();
 
     // 日志配置
-    LoggerConfig config_;
-    // 配置互斥锁
-    mutable std::mutex config_mutex_;
+    LogConfig config_;
+
     // 日志文件流
     std::unique_ptr<std::ofstream> log_file_stream_;
+
     // 文件互斥锁
-    std::mutex file_mutex_;
+    mutable std::mutex file_mutex_;
+
     // 控制台互斥锁
-    std::mutex console_mutex_;
+    mutable std::mutex console_mutex_;
+
+    // 配置互斥锁
+    mutable std::mutex config_mutex_;
+
     // 日志回调函数
-    std::function<void(const LogEntry&)> log_callback_;
+    LogCallback log_callback_;
+
     // 回调互斥锁
-    std::mutex callback_mutex_;
-    // 是否已初始化
-    bool is_initialized_;
-    // 异步日志队列
-    std::vector<LogEntry> async_queue_;
-    // 队列互斥锁
-    std::mutex queue_mutex_;
-    // 队列条件变量
-    std::condition_variable queue_cond_;
+    mutable std::mutex callback_mutex_;
+
+    // 环形缓冲区互斥锁
+    mutable std::mutex ring_mutex_;
+
+    // 环形缓冲区
+    char* ring_buffer_;
+    
+    // 环形缓冲区头指针
+    size_t ring_head_;
+    
+    // 环形缓冲区尾指针
+    size_t ring_tail_;
+
+    // 日志计数器
+    std::atomic<uint64_t> log_count_;
+
     // 异步日志线程
     std::thread async_thread_;
+
+    // 异步日志条件变量
+    std::condition_variable queue_cond_;
+
     // 停止标志
     std::atomic<bool> stop_flag_;
+
+    // 是否已初始化
+    std::atomic<bool> is_initialized_;
 };
 
 /**
@@ -281,10 +334,10 @@ private:
 #define LOG_ERROR(message, source) \
     cam_server::monitor::Logger::getInstance().error(message, source, __FILE__, __LINE__, __FUNCTION__)
 
-#define LOG_CRITICAL(message, source) \
-    cam_server::monitor::Logger::getInstance().critical(message, source, __FILE__, __LINE__, __FUNCTION__)
+#define LOG_FATAL(message, source) \
+    cam_server::monitor::Logger::getInstance().fatal(message, source, __FILE__, __LINE__, __FUNCTION__)
 
 } // namespace monitor
 } // namespace cam_server
 
-#endif // LOGGER_H
+#endif // CAM_SERVER_MONITOR_LOGGER_H

@@ -1,0 +1,37 @@
+set pagination off
+set logging file core_analysis.log
+set logging on
+set print pretty on
+
+echo "\n====== 核心转储分析 ======\n\n"
+
+# 基本信息
+echo "\n====== 崩溃时的堆栈 ======\n\n"
+where
+backtrace full
+
+# 线程信息
+echo "\n====== 所有线程信息 ======\n\n"
+info threads
+thread apply all backtrace
+
+# 帧信息
+echo "\n====== 崩溃点详细信息 ======\n\n"
+frame
+info frame
+info args
+info locals
+info registers
+
+# MjpegStreamer 相关信息
+echo "\n====== MjpegStreamer 信息 ======\n\n"
+p ((cam_server::api::MjpegStreamer*)this)->clients_.size()
+p ((cam_server::api::MjpegStreamer*)this)->is_running_
+
+# 内存信息
+echo "\n====== 内存信息 ======\n\n"
+info proc mappings
+
+# 退出GDB
+echo "\n====== 分析完成 ======\n\n"
+quit 

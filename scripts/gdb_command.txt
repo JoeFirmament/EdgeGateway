@@ -1,0 +1,54 @@
+set pagination off
+set logging file gdb_output.log
+set logging on
+set print thread-events on
+set print pretty on
+
+# 内存错误检测
+set env MALLOC_CHECK_=3
+
+# 设置关键断点
+break api::MjpegStreamer::handleFrame
+break api::MjpegStreamer::encodeToJpeg
+break api::MjpegStreamer::addClient
+break api::MjpegStreamer::removeClient
+break api::CameraApi::handleMjpegStream
+
+# 当发生段错误时执行的命令
+catch signal SIGSEGV
+commands
+  # 打印详细的堆栈信息
+  echo "\n====== 段错误发生 ======\n\n"
+  where
+  backtrace full
+  
+  # 打印所有线程的状态
+  echo "\n====== 所有线程状态 ======\n\n"
+  info threads
+  thread apply all backtrace
+  
+  # 打印当前栈帧
+  echo "\n====== 当前栈帧信息 ======\n\n"
+  info frame
+  info args
+  info locals
+  
+  # 如果在MjpegStreamer类中
+  echo "\n====== MjpegStreamer状态 ======\n\n"
+  print is_running_
+  print clients_.size()
+end
+
+# 当内存错误发生时
+catch signal SIGABRT
+commands
+  echo "\n====== 内存错误发生 ======\n\n"
+  where
+  backtrace full
+  info frame
+  info args
+  info locals
+end
+
+# 运行程序
+run 

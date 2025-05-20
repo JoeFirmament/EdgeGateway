@@ -5,8 +5,10 @@
 
 #include <chrono>
 #include <algorithm>
-#include <iostream>  // for std::cerr
+#include <iostream>  // for std::cout
 #include <cstring>   // for memcpy
+#include <sstream>   // for std::stringstream
+#include <iomanip>   // for std::setw, std::setfill
 
 // 使用FFmpeg进行JPEG编码
 extern "C" {
@@ -32,19 +34,19 @@ MjpegStreamer::MjpegStreamer()
       camera_clients_(),
       clients_mutex_(),
       last_fps_time_() {
-    std::cerr << "[MJPEG][mjpeg_streamer.cpp:MjpegStreamer] 创建 MjpegStreamer 实例" << std::endl;
+    LOG_DEBUG("创建 MjpegStreamer 实例", "MjpegStreamer");
 }
 
 MjpegStreamer::~MjpegStreamer() {
-    std::cerr << "[MJPEG][mjpeg_streamer.cpp:~MjpegStreamer] 销毁 MjpegStreamer 实例" << std::endl;
+    LOG_DEBUG("销毁 MjpegStreamer 实例", "MjpegStreamer");
     stop();
 }
 
 bool MjpegStreamer::initialize(const MjpegStreamerConfig& config) {
-    std::cerr << "[MJPEG][mjpeg_streamer.cpp:initialize] 开始初始化MJPEG流处理器..." << std::endl;
+    LOG_DEBUG("开始初始化MJPEG流处理器...", "MjpegStreamer");
 
     if (is_initialized_) {
-        std::cerr << "[MJPEG][mjpeg_streamer.cpp:initialize] MJPEG流处理器已经初始化" << std::endl;
+        LOG_DEBUG("MJPEG流处理器已经初始化", "MjpegStreamer");
         return true;
     }
 
@@ -52,46 +54,46 @@ bool MjpegStreamer::initialize(const MjpegStreamerConfig& config) {
 
     // 设置默认值
     if (config_.jpeg_quality <= 0 || config_.jpeg_quality > 100) {
-        std::cerr << "[MJPEG][mjpeg_streamer.cpp:initialize] 设置默认JPEG质量: 80" << std::endl;
+        LOG_DEBUG("设置默认JPEG质量: 80", "MjpegStreamer");
         config_.jpeg_quality = 80;
     }
     if (config_.max_fps <= 0) {
-        std::cerr << "[MJPEG][mjpeg_streamer.cpp:initialize] 设置默认最大帧率: 30" << std::endl;
+        LOG_DEBUG("设置默认最大帧率: 30", "MjpegStreamer");
         config_.max_fps = 30;
     }
-    // 强制限制最大客户端数量为2，确保系统稳定
-    if (config_.max_clients <= 0 || config_.max_clients > 2) {
-        std::cerr << "[MJPEG][mjpeg_streamer.cpp:initialize] 设置默认最大客户端数: 2" << std::endl;
-        LOG_INFO("限制最大客户端数为2，以确保系统稳定性", "MjpegStreamer");
-        config_.max_clients = 2;
+    // 设置合理的最大客户端数量
+    if (config_.max_clients <= 0) {
+        LOG_DEBUG("设置默认最大客户端数: 5", "MjpegStreamer");
+        LOG_INFO("设置最大客户端数为5", "MjpegStreamer");
+        config_.max_clients = 5;
     }
 
     is_initialized_ = true;
-    std::cerr << "[MJPEG][mjpeg_streamer.cpp:initialize] MJPEG流处理器初始化成功" << std::endl;
+    LOG_DEBUG("MJPEG流处理器初始化成功", "MjpegStreamer");
     LOG_INFO("MJPEG流处理器初始化成功", "MjpegStreamer");
     return true;
 }
 
 bool MjpegStreamer::start() {
-    std::cerr << "[MJPEG][mjpeg_streamer.cpp:start] 开始启动MJPEG流处理器..." << std::endl;
+    LOG_DEBUG("开始启动MJPEG流处理器...", "MjpegStreamer");
 
     if (!is_initialized_) {
-        std::cerr << "[MJPEG][mjpeg_streamer.cpp:start] MJPEG流处理器未初始化" << std::endl;
+        LOG_DEBUG("MJPEG流处理器未初始化", "MjpegStreamer");
         LOG_ERROR("MJPEG流处理器未初始化", "MjpegStreamer");
         return false;
     }
 
     if (is_running_) {
-        std::cerr << "[MJPEG][mjpeg_streamer.cpp:start] MJPEG流处理器已经在运行中" << std::endl;
+        LOG_DEBUG("MJPEG流处理器已经在运行中", "MjpegStreamer");
         return true;
     }
 
     // 获取摄像头管理器
-    std::cerr << "[MJPEG][mjpeg_streamer.cpp:start] 获取摄像头管理器..." << std::endl;
+    LOG_DEBUG("获取摄像头管理器...", "MjpegStreamer");
     auto& camera_manager = camera::CameraManager::getInstance();
 
     // 设置帧回调
-    std::cerr << "[MJPEG][mjpeg_streamer.cpp:start] 设置帧回调..." << std::endl;
+    LOG_DEBUG("设置帧回调...", "MjpegStreamer");
     camera_manager.setFrameCallback([this](const camera::Frame& frame) {
         handleFrame(frame);
     });
@@ -100,7 +102,7 @@ bool MjpegStreamer::start() {
     frame_count_ = 0;
     last_fps_time_ = std::chrono::steady_clock::now();
 
-    std::cerr << "[MJPEG][mjpeg_streamer.cpp:start] MJPEG流处理器启动成功" << std::endl;
+    LOG_DEBUG("MJPEG流处理器启动成功", "MjpegStreamer");
     LOG_INFO("MJPEG流处理器启动成功", "MjpegStreamer");
     return true;
 }
@@ -132,13 +134,13 @@ bool MjpegStreamer::addClient(const std::string& client_id,
                              std::function<void(const std::vector<uint8_t>&)> frame_callback,
                              std::function<void(const std::string&)> error_callback,
                              std::function<void()> close_callback) {
-    std::cerr << "[MJPEG][mjpeg_streamer.cpp:addClient] 客户端连接建立 - "
-              << "ID: " << client_id 
-              << ", 摄像头: " << (camera_id.empty() ? "无" : camera_id) 
-              << ", 回调函数: "
-              << "frame:" << (void*)&frame_callback << " "
-              << "error:" << (void*)&error_callback << " "
-              << "close:" << (void*)&close_callback << std::endl;
+    LOG_DEBUG("客户端连接建立 - ID: " + client_id + 
+              ", 摄像头: " + (camera_id.empty() ? "无" : camera_id) + 
+              ", 回调函数: frame:" + std::to_string((uintptr_t)&frame_callback) + 
+              " error:" + std::to_string((uintptr_t)&error_callback) + 
+              " close:" + std::to_string((uintptr_t)&close_callback), 
+              "MjpegStreamer");
+              
     if (!is_running_) {
         LOG_ERROR("MJPEG流处理器未运行", "MjpegStreamer");
         return false;
@@ -280,47 +282,70 @@ double MjpegStreamer::getCurrentFps() const {
 
 void MjpegStreamer::handleFrame(const camera::Frame& frame) {
     if (!is_running_) {
-        std::cerr << "[MJPEG][mjpeg_streamer.cpp:handleFrame] 流处理器未运行" << std::endl;
+        LOG_DEBUG("流处理器未运行，忽略帧", "MjpegStreamer");
         return;
     }
 
     try {
-        std::cerr << "[MJPEG][mjpeg_streamer.cpp:handleFrame] 开始处理帧 - "
-              << "分辨率: " << frame.getWidth() << "x" << frame.getHeight()
-              << ", 格式: " << static_cast<int>(frame.getFormat())
-              << ", 数据大小: " << frame.getData().size() 
-              << ", 数据地址: " << (void*)frame.getData().data()
-              << ", 时间戳: " << frame.getMetadata().timestamp
-              << ", 客户端数: " << clients_.size() << std::endl;
-
+        // 检查是否有客户端连接
+        std::vector<std::shared_ptr<MjpegClient>> active_clients;
+        {
+            std::lock_guard<std::mutex> lock(clients_mutex_);
+            if (clients_.empty()) {
+                LOG_DEBUG("没有客户端连接，忽略帧", "MjpegStreamer");
+                return;  // 没有客户端，不需要处理帧
+            }
+            
+            // 在持有锁的情况下，复制所有客户端的智能指针
+            // 这确保即使在处理过程中客户端被移除，我们仍然持有有效的引用
+            active_clients.reserve(clients_.size());
+            for (const auto& pair : clients_) {
+                if (pair.second) {
+                    active_clients.push_back(pair.second);
+                }
+            }
+            
+            LOG_DEBUG("处理帧 - 客户端数: " + std::to_string(active_clients.size()), "MjpegStreamer");
+        }
+        
+        // 如果没有活跃客户端，直接返回
+        if (active_clients.empty()) {
+            LOG_DEBUG("没有有效客户端，忽略帧", "MjpegStreamer");
+            return;
+        }
+        
         // 验证帧数据
-        if (frame.getData().empty()) {
-            std::cerr << "[MJPEG][mjpeg_streamer.cpp:handleFrame] 错误: 空帧数据" << std::endl;
+        if (frame.getData().empty() || 
+            frame.getWidth() <= 0 || 
+            frame.getHeight() <= 0 || 
+            frame.getFormat() == camera::PixelFormat::UNKNOWN) {
+            LOG_ERROR("无效帧数据 - 大小: " + std::to_string(frame.getData().size()) + 
+                     ", 宽度: " + std::to_string(frame.getWidth()) + 
+                     ", 高度: " + std::to_string(frame.getHeight()) + 
+                     ", 格式: " + std::to_string(static_cast<int>(frame.getFormat())), 
+                     "MjpegStreamer");
             return;
         }
 
-        if (frame.getWidth() <= 0 || frame.getHeight() <= 0) {
-            std::cerr << "[MJPEG][mjpeg_streamer.cpp:handleFrame] 错误: 无效分辨率 " 
-                      << frame.getWidth() << "x" << frame.getHeight() << std::endl;
-            return;
-        }
-
-        if (frame.getFormat() == camera::PixelFormat::UNKNOWN) {
-            std::cerr << "[MJPEG][mjpeg_streamer.cpp:handleFrame] 错误: 未知帧格式" << std::endl;
-            return;
-        }
+        LOG_DEBUG("有效帧数据 - 大小: " + std::to_string(frame.getData().size()) + 
+                 ", 宽度: " + std::to_string(frame.getWidth()) + 
+                 ", 高度: " + std::to_string(frame.getHeight()) + 
+                 ", 格式: " + std::to_string(static_cast<int>(frame.getFormat())),
+                 "MjpegStreamer");
 
         // 编码为JPEG
         std::vector<uint8_t> jpeg_data;
-        std::cerr << "[MJPEG][mjpeg_streamer.cpp:handleFrame] 开始JPEG编码..." << std::endl;
         if (!encodeToJpeg(frame, jpeg_data)) {
-            std::cerr << "[MJPEG][mjpeg_streamer.cpp:handleFrame] JPEG编码失败" << std::endl;
             LOG_ERROR("JPEG编码失败", "MjpegStreamer");
             return;
         }
-        std::cerr << "[MJPEG][mjpeg_streamer.cpp:handleFrame] JPEG编码成功, 数据大小: " 
-                  << jpeg_data.size() << " 字节" << std::endl;
+        
+        if (jpeg_data.empty()) {
+            LOG_ERROR("JPEG编码后数据为空", "MjpegStreamer");
+            return;
+        }
 
+        LOG_DEBUG("JPEG编码成功 - 数据大小: " + std::to_string(jpeg_data.size()), "MjpegStreamer");
 
         // 更新帧率统计
         frame_count_++;
@@ -331,275 +356,334 @@ void MjpegStreamer::handleFrame(const camera::Frame& frame) {
             current_fps_ = static_cast<double>(frame_count_) / elapsed;
             frame_count_ = 0;
             last_fps_time_ = now;
-            }
-
-        // 发送到所有客户端
-        std::vector<std::shared_ptr<MjpegClient>> clients_copy;
-        {
-            std::lock_guard<std::mutex> lock(clients_mutex_);
-            for (const auto& pair : clients_) {
-                clients_copy.push_back(pair.second);
-            }
+            LOG_DEBUG("当前帧率: " + std::to_string(current_fps_), "MjpegStreamer");
         }
 
-        // 发送到所有客户端
-        {
-            std::cerr << "[MJPEG][mjpeg_streamer.cpp:handleFrame] 开始处理客户端回调" << std::endl;
-            std::lock_guard<std::mutex> lock(clients_mutex_);
-            for (auto it = clients_.begin(); it != clients_.end(); ) {
-                std::cerr << "[MJPEG][mjpeg_streamer.cpp:handleFrame] 处理客户端: " << it->first << std::endl;
-                auto client = it->second;
-                std::cerr << "[MJPEG][mjpeg_streamer.cpp:handleFrame] 客户端指针: " << client.get() << std::endl;
-                try {
-                    if (!client->frame_callback) {
-                        LOG_WARNING("客户端回调无效: " + client->id, "MjpegStreamer");
-                        ++it;
-                        continue;
-                    }
+        LOG_DEBUG("开始处理 " + std::to_string(active_clients.size()) + " 个客户端", "MjpegStreamer");
 
+        // 在不持有锁的情况下处理所有客户端
+        std::vector<std::string> clients_to_remove;
+        
+        for (const auto& client : active_clients) {
+            if (!client || !client->frame_callback) {
+                if (client) {
+                    LOG_WARNING("客户端 " + client->id + " 没有有效的帧回调", "MjpegStreamer");
+                    clients_to_remove.push_back(client->id);
+                } else {
+                    LOG_WARNING("发现无效客户端指针", "MjpegStreamer");
+                }
+                continue;
+            }
+            
+            try {
+                // 为每个客户端创建一个独立的JPEG数据副本
+                // 这确保了即使一个客户端的回调修改了数据，也不会影响其他客户端
+                std::vector<uint8_t> client_jpeg_data = jpeg_data;
+                
+                LOG_DEBUG("调用客户端 " + client->id + " 的帧回调", "MjpegStreamer");
+                
+                // 执行回调
+                client->frame_callback(client_jpeg_data);
+                
+                LOG_DEBUG("客户端 " + client->id + " 的帧回调执行成功", "MjpegStreamer");
+                
+            } catch (const std::exception& e) {
+                LOG_ERROR("客户端回调异常: " + std::string(e.what()) + ", client_id=" + client->id, "MjpegStreamer");
+                clients_to_remove.push_back(client->id);
+                
+                // 调用错误回调
+                if (client->error_callback) {
                     try {
-                        std::cerr << "[MJPEG][mjpeg_streamer.cpp:handleFrame] 准备执行回调" << std::endl;
-                        // 执行回调
-                        if (!client->frame_callback) {
-                            std::cerr << "[MJPEG][mjpeg_streamer.cpp:handleFrame] 错误: 空回调函数" << std::endl;
-                            ++it;
-                            continue;
-                        }
-                        // 创建jpeg_data的深拷贝，防止回调中修改原始数据
-                        std::vector<uint8_t> jpeg_copy(jpeg_data);
-                        std::cerr << "[MJPEG][mjpeg_streamer.cpp:handleFrame] 创建JPEG数据拷贝，大小: " 
-                                << jpeg_copy.size() << " 字节" << std::endl;
-                        
-                        // 临时释放锁，防止HTTP请求处理被阻塞
-                        clients_mutex_.unlock();
-                        
+                        client->error_callback("回调执行异常: " + std::string(e.what()));
+                    } catch (...) {
+                        // 忽略错误回调中的异常
+                        LOG_ERROR("执行错误回调时发生异常", "MjpegStreamer");
+                    }
+                }
+            } catch (...) {
+                if (client) {
+                    LOG_ERROR("客户端回调未知异常, client_id=" + client->id, "MjpegStreamer");
+                    clients_to_remove.push_back(client->id);
+                    
+                    // 调用错误回调
+                    if (client->error_callback) {
                         try {
-                            // 执行回调
-                            client->frame_callback(jpeg_copy);
+                            client->error_callback("回调执行未知异常");
                         } catch (...) {
-                            clients_mutex_.lock();
-                            throw;
+                            // 忽略错误回调中的异常
+                            LOG_ERROR("执行错误回调时发生未知异常", "MjpegStreamer");
                         }
-                        
-                        clients_mutex_.lock();
-                        std::cerr << "[MJPEG][mjpeg_streamer.cpp:handleFrame] 回调执行完成" << std::endl;
-                        
-                        // 更新最后帧时间
-                        client->last_frame_time = utils::TimeUtils::getCurrentTimestamp();
-                        ++it;
-                    } catch (const std::exception& e) {
-                        std::cerr << "[MJPEG][mjpeg_streamer.cpp:handleFrame] 回调执行异常 - "
-                                  << "客户端: " << client->id 
-                                  << ", 错误: " << e.what() << std::endl;
-                        it = clients_.erase(it);
-                        if (!client->camera_id.empty()) {
-                            camera_clients_[client->camera_id].erase(client->id);
-                            if (camera_clients_[client->camera_id].empty()) {
-                                camera_clients_.erase(client->camera_id);
-                            }
-                        }
-                        if (client->close_callback) {
-                            client->close_callback();
-                        }
-                    }
-                } catch (const std::exception& e) {
-                    std::cerr << "[MJPEG][mjpeg_streamer.cpp:handleFrame] 处理客户端异常 - "
-                              << "客户端: " << client->id 
-                              << ", 错误: " << e.what() << std::endl;
-                    it = clients_.erase(it);
-                    if (!client->camera_id.empty()) {
-                        camera_clients_[client->camera_id].erase(client->id);
-                        if (camera_clients_[client->camera_id].empty()) {
-                            camera_clients_.erase(client->camera_id);
-                        }
-                    }
-                    if (client->close_callback) {
-                        client->close_callback();
                     }
                 }
             }
         }
+        
+        // 移除出错的客户端
+        if (!clients_to_remove.empty()) {
+            std::lock_guard<std::mutex> lock(clients_mutex_);
+            for (const auto& client_id : clients_to_remove) {
+                auto it = clients_.find(client_id);
+                if (it != clients_.end()) {
+                    // 从客户端列表中移除
+                    clients_.erase(it);
+                    LOG_INFO("移除异常客户端: " + client_id, "MjpegStreamer");
+                }
+            }
+            LOG_INFO("移除了 " + std::to_string(clients_to_remove.size()) + " 个异常客户端，剩余 " + 
+                    std::to_string(clients_.size()) + " 个客户端", "MjpegStreamer");
+        }
+        
     } catch (const std::exception& e) {
-        std::cerr << "[MJPEG][mjpeg_streamer.cpp:handleFrame] 处理帧时发生异常: " << e.what() << std::endl;
         LOG_ERROR("处理帧时发生异常: " + std::string(e.what()), "MjpegStreamer");
+    } catch (...) {
+        LOG_ERROR("处理帧时发生未知异常", "MjpegStreamer");
     }
 }
 
 bool MjpegStreamer::encodeToJpeg(const camera::Frame& frame, std::vector<uint8_t>& jpeg_data) {
-    std::cerr << "[MJPEG][mjpeg_streamer.cpp:encodeToJpeg] 开始编码 - "
-              << "分辨率: " << frame.getWidth() << "x" << frame.getHeight()
-              << ", 格式: " << static_cast<int>(frame.getFormat())
-              << ", 数据大小: " << frame.getData().size()
-              << ", 数据地址: " << (void*)frame.getData().data() << std::endl;
+    LOG_DEBUG("开始编码 - 分辨率: " + std::to_string(frame.getWidth()) + "x" + std::to_string(frame.getHeight()) +
+             ", 格式: " + std::to_string(static_cast<int>(frame.getFormat())) +
+             ", 数据大小: " + std::to_string(frame.getData().size()) +
+             ", 数据地址: " + std::to_string((uintptr_t)frame.getData().data()), 
+             "MjpegStreamer");
 
     // 验证输入数据
     if (frame.getData().empty()) {
-        std::cerr << "[MJPEG][mjpeg_streamer.cpp:encodeToJpeg] 错误: 空帧数据" << std::endl;
+        LOG_DEBUG("错误: 空帧数据", "MjpegStreamer");
         LOG_ERROR("输入帧数据为空", "MjpegStreamer");
         return false;
     }
 
     if (frame.getWidth() <= 0 || frame.getHeight() <= 0) {
-        std::cerr << "[MJPEG][mjpeg_streamer.cpp:encodeToJpeg] 错误: 无效分辨率 " 
-                  << frame.getWidth() << "x" << frame.getHeight() << std::endl;
+        LOG_DEBUG("错误: 无效分辨率 " + std::to_string(frame.getWidth()) + "x" + std::to_string(frame.getHeight()), 
+                  "MjpegStreamer");
         LOG_ERROR("无效分辨率", "MjpegStreamer");
         return false;
     }
 
-    // 检查数据头部是否为JPEG魔数
-    if (frame.getData().size() >= 2 && 
-        frame.getData()[0] == 0xFF && 
-        frame.getData()[1] == 0xD8) {
-        
-        
-        // 直接使用数据
-        jpeg_data = frame.getData();
-        return true;
-    }
-
-    // 如果是YUYV格式，需要转换为JPEG
-    if (frame.getFormat() == camera::PixelFormat::YUYV) {
-        AVCodecContext* codec_ctx = nullptr;
-        SwsContext* sws_ctx = nullptr;
-        AVFrame* yuv_frame = nullptr;
-        AVFrame* jpeg_frame = nullptr;
-        AVPacket* packet = nullptr;
-        bool success = false;
-
-        try {
-            // 创建编码器上下文
-            const AVCodec* codec = avcodec_find_encoder(AV_CODEC_ID_MJPEG);
-            if (!codec) {
-                LOG_ERROR("找不到MJPEG编码器", "MjpegStreamer");
-                return false;
-            }
-
-            codec_ctx = avcodec_alloc_context3(codec);
-            if (!codec_ctx) {
-                LOG_ERROR("无法创建编码器上下文", "MjpegStreamer");
-                return false;
-            }
-
-            // 设置编码参数
-            codec_ctx->width = frame.getWidth();
-            codec_ctx->height = frame.getHeight();
-            codec_ctx->time_base = (AVRational){1, 25};
-            codec_ctx->pix_fmt = AV_PIX_FMT_YUVJ422P;
-            codec_ctx->flags |= AV_CODEC_FLAG_QSCALE;
-            codec_ctx->global_quality = FF_QP2LAMBDA * config_.jpeg_quality;
-
-            // 打开编码器
-            if (avcodec_open2(codec_ctx, codec, nullptr) < 0) {
-                LOG_ERROR("无法打开编码器", "MjpegStreamer");
-                throw std::runtime_error("无法打开编码器");
-            }
-
-            // 创建图像转换上下文
-            sws_ctx = sws_getContext(
-                frame.getWidth(), frame.getHeight(), AV_PIX_FMT_YUYV422,
-                frame.getWidth(), frame.getHeight(), AV_PIX_FMT_YUVJ422P,
-                SWS_BICUBIC, nullptr, nullptr, nullptr);
-            if (!sws_ctx) {
-                LOG_ERROR("无法创建图像转换上下文", "MjpegStreamer");
-                throw std::runtime_error("无法创建图像转换上下文");
-            }
-
-            // 分配帧缓冲区
-            yuv_frame = av_frame_alloc();
-            jpeg_frame = av_frame_alloc();
-            if (!yuv_frame || !jpeg_frame) {
-                LOG_ERROR("无法分配帧缓冲区", "MjpegStreamer");
-                throw std::runtime_error("无法分配帧缓冲区");
-            }
-
-            yuv_frame->width = frame.getWidth();
-            yuv_frame->height = frame.getHeight();
-            yuv_frame->format = AV_PIX_FMT_YUYV422;
+    try {
+        // 检查数据头部是否为JPEG魔数
+        if (frame.getData().size() >= 2 && 
+            frame.getData()[0] == 0xFF && 
+            frame.getData()[1] == 0xD8) {
             
-            jpeg_frame->width = frame.getWidth();
-            jpeg_frame->height = frame.getHeight();
-            jpeg_frame->format = AV_PIX_FMT_YUVJ422P;
-
-            // 分配图像数据缓冲区
-            if (av_image_alloc(yuv_frame->data, yuv_frame->linesize,
-                             frame.getWidth(), frame.getHeight(),
-                             AV_PIX_FMT_YUYV422, 1) < 0) {
-                LOG_ERROR("无法分配YUV图像缓冲区", "MjpegStreamer");
-                throw std::runtime_error("无法分配YUV图像缓冲区");
+            LOG_DEBUG("检测到JPEG魔数，直接使用帧数据", "MjpegStreamer");
+            // 直接使用数据
+            jpeg_data = frame.getData();
+            
+            // 记录编码后的JPEG数据的前几个字节，用于调试
+            std::stringstream hex_header;
+            hex_header << "JPEG数据头: ";
+            for (size_t i = 0; i < std::min(size_t(16), jpeg_data.size()); ++i) {
+                hex_header << std::hex << std::setw(2) << std::setfill('0') 
+                          << static_cast<int>(jpeg_data[i]) << " ";
             }
-                            
-            if (av_image_alloc(jpeg_frame->data, jpeg_frame->linesize,
-                              frame.getWidth(), frame.getHeight(),
-                              AV_PIX_FMT_YUVJ422P, 1) < 0) {
-                LOG_ERROR("无法分配JPEG图像缓冲区", "MjpegStreamer");
-                throw std::runtime_error("无法分配JPEG图像缓冲区");
-            }
-
-            // 复制输入数据
-            memcpy(yuv_frame->data[0], frame.getData().data(), frame.getData().size());
-
-            // 转换颜色空间
-            sws_scale(sws_ctx,
-                      yuv_frame->data, yuv_frame->linesize, 0, frame.getHeight(),
-                      jpeg_frame->data, jpeg_frame->linesize);
-
-            // 编码为JPEG
-            packet = av_packet_alloc();
-            if (!packet) {
-                LOG_ERROR("无法分配AVPacket", "MjpegStreamer");
-                throw std::runtime_error("无法分配AVPacket");
-            }
-
-            int ret = avcodec_send_frame(codec_ctx, jpeg_frame);
-            if (ret < 0) {
-                LOG_ERROR("发送帧到编码器失败", "MjpegStreamer");
-                throw std::runtime_error("发送帧到编码器失败");
-            }
-
-            ret = avcodec_receive_packet(codec_ctx, packet);
-            if (ret < 0) {
-                LOG_ERROR("从编码器接收数据失败", "MjpegStreamer");
-                throw std::runtime_error("从编码器接收数据失败");
-            }
-
-            // 复制编码后的数据
-            jpeg_data.resize(packet->size);
-            memcpy(jpeg_data.data(), packet->data, packet->size);
-            success = true;
-        } catch (const std::exception& e) {
-            LOG_ERROR(std::string("JPEG编码异常: ") + e.what(), "MjpegStreamer");
-            success = false;
+            LOG_DEBUG(hex_header.str(), "MjpegStreamer");
+            
+            return true;
         }
 
-        // 清理资源
-        if (yuv_frame) {
-            if (yuv_frame->data[0]) {
-                av_freep(&yuv_frame->data[0]);
+        // 如果是YUYV格式，需要转换为JPEG
+        if (frame.getFormat() == camera::PixelFormat::YUYV) {
+            AVCodecContext* codec_ctx = nullptr;
+            SwsContext* sws_ctx = nullptr;
+            AVFrame* yuv_frame = nullptr;
+            AVFrame* jpeg_frame = nullptr;
+            AVPacket* packet = nullptr;
+            bool success = false;
+
+            try {
+                // 创建编码器上下文
+                const AVCodec* codec = avcodec_find_encoder(AV_CODEC_ID_MJPEG);
+                if (!codec) {
+                    LOG_ERROR("找不到MJPEG编码器", "MjpegStreamer");
+                    return false;
+                }
+                LOG_DEBUG("找到MJPEG编码器", "MjpegStreamer");
+
+                codec_ctx = avcodec_alloc_context3(codec);
+                if (!codec_ctx) {
+                    LOG_ERROR("无法创建编码器上下文", "MjpegStreamer");
+                    return false;
+                }
+                LOG_DEBUG("创建编码器上下文成功", "MjpegStreamer");
+
+                // 设置编码参数
+                codec_ctx->width = frame.getWidth();
+                codec_ctx->height = frame.getHeight();
+                codec_ctx->time_base = (AVRational){1, 25};
+                codec_ctx->pix_fmt = AV_PIX_FMT_YUVJ422P;
+                codec_ctx->flags |= AV_CODEC_FLAG_QSCALE;
+                codec_ctx->global_quality = FF_QP2LAMBDA * config_.jpeg_quality;
+
+                // 打开编码器
+                int ret = avcodec_open2(codec_ctx, codec, nullptr);
+                if (ret < 0) {
+                    char error_buf[AV_ERROR_MAX_STRING_SIZE];
+                    av_strerror(ret, error_buf, AV_ERROR_MAX_STRING_SIZE);
+                    LOG_ERROR(std::string("无法打开编码器: ") + error_buf, "MjpegStreamer");
+                    throw std::runtime_error("无法打开编码器");
+                }
+                LOG_DEBUG("打开编码器成功", "MjpegStreamer");
+
+                // 创建图像转换上下文
+                sws_ctx = sws_getContext(
+                    frame.getWidth(), frame.getHeight(), AV_PIX_FMT_YUYV422,
+                    frame.getWidth(), frame.getHeight(), AV_PIX_FMT_YUVJ422P,
+                    SWS_BICUBIC, nullptr, nullptr, nullptr);
+                if (!sws_ctx) {
+                    LOG_ERROR("无法创建图像转换上下文", "MjpegStreamer");
+                    throw std::runtime_error("无法创建图像转换上下文");
+                }
+                LOG_DEBUG("创建图像转换上下文成功", "MjpegStreamer");
+
+                // 分配帧缓冲区
+                yuv_frame = av_frame_alloc();
+                jpeg_frame = av_frame_alloc();
+                if (!yuv_frame || !jpeg_frame) {
+                    LOG_ERROR("无法分配帧缓冲区", "MjpegStreamer");
+                    throw std::runtime_error("无法分配帧缓冲区");
+                }
+                LOG_DEBUG("分配帧缓冲区成功", "MjpegStreamer");
+
+                yuv_frame->width = frame.getWidth();
+                yuv_frame->height = frame.getHeight();
+                yuv_frame->format = AV_PIX_FMT_YUYV422;
+                
+                jpeg_frame->width = frame.getWidth();
+                jpeg_frame->height = frame.getHeight();
+                jpeg_frame->format = AV_PIX_FMT_YUVJ422P;
+
+                // 分配图像数据缓冲区
+                ret = av_image_alloc(yuv_frame->data, yuv_frame->linesize,
+                                 frame.getWidth(), frame.getHeight(),
+                                 AV_PIX_FMT_YUYV422, 1);
+                if (ret < 0) {
+                    char error_buf[AV_ERROR_MAX_STRING_SIZE];
+                    av_strerror(ret, error_buf, AV_ERROR_MAX_STRING_SIZE);
+                    LOG_ERROR(std::string("无法分配YUV图像缓冲区: ") + error_buf, "MjpegStreamer");
+                    throw std::runtime_error("无法分配YUV图像缓冲区");
+                }
+                LOG_DEBUG("分配YUV图像缓冲区成功", "MjpegStreamer");
+                                
+                ret = av_image_alloc(jpeg_frame->data, jpeg_frame->linesize,
+                                  frame.getWidth(), frame.getHeight(),
+                                  AV_PIX_FMT_YUVJ422P, 1);
+                if (ret < 0) {
+                    char error_buf[AV_ERROR_MAX_STRING_SIZE];
+                    av_strerror(ret, error_buf, AV_ERROR_MAX_STRING_SIZE);
+                    LOG_ERROR(std::string("无法分配JPEG图像缓冲区: ") + error_buf, "MjpegStreamer");
+                    throw std::runtime_error("无法分配JPEG图像缓冲区");
+                }
+                LOG_DEBUG("分配JPEG图像缓冲区成功", "MjpegStreamer");
+
+                // 复制输入数据
+                size_t frame_size = frame.getData().size();
+                if (frame_size > 0) {
+                    LOG_DEBUG("复制输入数据到YUV帧, 大小: " + std::to_string(frame_size), "MjpegStreamer");
+                    memcpy(yuv_frame->data[0], frame.getData().data(), frame_size);
+                } else {
+                    LOG_ERROR("输入帧数据大小为0", "MjpegStreamer");
+                    throw std::runtime_error("输入帧数据大小为0");
+                }
+
+                // 转换颜色空间
+                LOG_DEBUG("开始转换颜色空间", "MjpegStreamer");
+                int height = sws_scale(sws_ctx,
+                          yuv_frame->data, yuv_frame->linesize, 0, frame.getHeight(),
+                          jpeg_frame->data, jpeg_frame->linesize);
+                if (height <= 0) {
+                    LOG_ERROR("颜色空间转换失败", "MjpegStreamer");
+                    throw std::runtime_error("颜色空间转换失败");
+                }
+                LOG_DEBUG("颜色空间转换成功, 输出高度: " + std::to_string(height), "MjpegStreamer");
+
+                // 编码为JPEG
+                packet = av_packet_alloc();
+                if (!packet) {
+                    LOG_ERROR("无法分配AVPacket", "MjpegStreamer");
+                    throw std::runtime_error("无法分配AVPacket");
+                }
+                LOG_DEBUG("分配AVPacket成功", "MjpegStreamer");
+
+                ret = avcodec_send_frame(codec_ctx, jpeg_frame);
+                if (ret < 0) {
+                    char error_buf[AV_ERROR_MAX_STRING_SIZE];
+                    av_strerror(ret, error_buf, AV_ERROR_MAX_STRING_SIZE);
+                    LOG_ERROR(std::string("发送帧到编码器失败: ") + error_buf, "MjpegStreamer");
+                    throw std::runtime_error("发送帧到编码器失败");
+                }
+                LOG_DEBUG("发送帧到编码器成功", "MjpegStreamer");
+
+                ret = avcodec_receive_packet(codec_ctx, packet);
+                if (ret < 0) {
+                    char error_buf[AV_ERROR_MAX_STRING_SIZE];
+                    av_strerror(ret, error_buf, AV_ERROR_MAX_STRING_SIZE);
+                    LOG_ERROR(std::string("从编码器接收数据失败: ") + error_buf, "MjpegStreamer");
+                    throw std::runtime_error("从编码器接收数据失败");
+                }
+                LOG_DEBUG("从编码器接收数据成功, 数据大小: " + std::to_string(packet->size), "MjpegStreamer");
+
+                // 复制编码后的数据
+                jpeg_data.resize(packet->size);
+                if (packet->size > 0) {
+                    memcpy(jpeg_data.data(), packet->data, packet->size);
+                    
+                    // 记录编码后的JPEG数据的前几个字节，用于调试
+                    std::stringstream hex_header;
+                    hex_header << "JPEG数据头: ";
+                    for (size_t i = 0; i < std::min(size_t(16), jpeg_data.size()); ++i) {
+                        hex_header << std::hex << std::setw(2) << std::setfill('0') 
+                                  << static_cast<int>(jpeg_data[i]) << " ";
+                    }
+                    LOG_DEBUG(hex_header.str(), "MjpegStreamer");
+                    
+                    success = true;
+                } else {
+                    LOG_ERROR("编码后的数据大小为0", "MjpegStreamer");
+                }
+            } catch (const std::exception& e) {
+                LOG_ERROR(std::string("JPEG编码异常: ") + e.what(), "MjpegStreamer");
+            } catch (...) {
+                LOG_ERROR("JPEG编码过程中发生未知异常", "MjpegStreamer");
             }
-            av_frame_free(&yuv_frame);
-        }
-        if (jpeg_frame) {
-            if (jpeg_frame->data[0]) {
-                av_freep(&jpeg_frame->data[0]);
+
+            // 清理资源
+            if (yuv_frame) {
+                if (yuv_frame->data[0]) {
+                    av_freep(&yuv_frame->data[0]);
+                }
+                av_frame_free(&yuv_frame);
             }
-            av_frame_free(&jpeg_frame);
-        }
-        if (packet) {
-            av_packet_free(&packet);
-        }
-        if (sws_ctx) {
-            sws_freeContext(sws_ctx);
-        }
-        if (codec_ctx) {
-            avcodec_free_context(&codec_ctx);
+            if (jpeg_frame) {
+                if (jpeg_frame->data[0]) {
+                    av_freep(&jpeg_frame->data[0]);
+                }
+                av_frame_free(&jpeg_frame);
+            }
+            if (packet) {
+                av_packet_free(&packet);
+            }
+            if (sws_ctx) {
+                sws_freeContext(sws_ctx);
+            }
+            if (codec_ctx) {
+                avcodec_free_context(&codec_ctx);
+            }
+
+            return success && !jpeg_data.empty();
         }
 
-        return success && !jpeg_data.empty();
+        // 如果没有JPEG魔数，记录错误
+        LOG_ERROR("不支持的图像格式: " + std::to_string(static_cast<int>(frame.getFormat())), "MjpegStreamer");
+        return false;
+    } catch (const std::exception& e) {
+        LOG_ERROR(std::string("encodeToJpeg异常: ") + e.what(), "MjpegStreamer");
+        return false;
+    } catch (...) {
+        LOG_ERROR("encodeToJpeg未知异常", "MjpegStreamer");
+        return false;
     }
-
-    // 如果没有JPEG魔数，记录错误
-    LOG_ERROR("无效的JPEG数据", "MjpegStreamer");
-    return false;
 }
 
 bool MjpegStreamer::resizeFrame(const camera::Frame& frame, camera::Frame& resized_frame) {

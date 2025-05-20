@@ -110,6 +110,12 @@ public:
      */
     std::vector<CameraDeviceInfo> scanDevices();
 
+    /**
+     * @brief 检测当前设置的像素格式
+     * @return 检测到的像素格式
+     */
+    PixelFormat detectPixelFormat() const;
+
 private:
     // 初始化设备
     bool initDevice();
