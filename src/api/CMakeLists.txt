@@ -49,6 +49,7 @@ target_compile_definitions(api_module PRIVATE
 # 链接库
 target_link_libraries(api_module
     utils_module
+    $<IF:$<TARGET_EXISTS:fmt::fmt>,fmt::fmt,fmt>
     camera_module
     video_module
     ${FFMPEG_LIBRARIES}

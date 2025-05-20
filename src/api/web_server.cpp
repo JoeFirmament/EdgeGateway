@@ -18,6 +18,9 @@
 #include <sys/stat.h>
 #include <errno.h>   // for errno and strerror
 #include <iostream>  // for std::cerr
+#include <fstream>   // for std::ifstream
+#include <sstream>   // for std::stringstream
+#include <fmt/format.h>  // for string formatting
 
 // 使用Mongoose作为HTTP服务器库
 #include "mongoose.h"
@@ -34,13 +37,13 @@ public:
     }
 
     bool initialize(const WebServerConfig& config, std::shared_ptr<RestHandler> rest_handler) {
-        std::cerr << "[WEB][web_server.cpp:Impl::initialize] 开始初始化Web服务器实现..." << std::endl;
+        LOG_DEBUG("开始初始化Web服务器实现...", "WebServer");
 
-        std::cerr << "[WEB][web_server.cpp:Impl::initialize] 设置配置..." << std::endl;
+        LOG_DEBUG("设置配置...", "WebServer");
         config_ = config;
         rest_handler_ = rest_handler;
 
-        std::cerr << "[WEB][web_server.cpp:Impl::initialize] Web服务器实现初始化成功" << std::endl;
+        LOG_DEBUG("Web服务器实现初始化成功", "WebServer");
         return true;
     }
 
@@ -60,7 +63,7 @@ public:
         }
 
         LOG_INFO("Web服务器监听地址: " + listen_addr, "WebServer");
-        std::cerr << "[WEB][DEBUG] 尝试监听地址: " << listen_addr << std::endl;
+        LOG_DEBUG("尝试监听地址: " + listen_addr, "WebServer");
         
         // 创建HTTP连接
         struct mg_connection* nc = mg_http_listen(&mg_mgr_, listen_addr.c_str(), eventHandler, this);
@@ -70,10 +73,10 @@ public:
             return false;
         }
 
-        std::cerr << "[WEB][DEBUG] Web服务器监听成功" << std::endl;
+        LOG_DEBUG("Web服务器监听成功", "WebServer");
 
         // 设置CORS头
-        const char* cors_headers = "Access-Control-Allow-Origin: *\r\n"
+        [[maybe_unused]] const char* cors_headers = "Access-Control-Allow-Origin: *\r\n"
                                  "Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS\r\n"
                                  "Access-Control-Allow-Headers: Content-Type, Authorization, X-API-Key, Accept, Origin, DNT, X-CustomHeader, Keep-Alive, User-Agent, X-Requested-With, If-Modified-Since, Cache-Control\r\n"
                                  "Access-Control-Allow-Credentials: true\r\n"
@@ -141,18 +144,29 @@ public:
             parseHttpRequest(hm, request);
 
             // 打印请求信息
-            std::cerr << "\n[WEB][DEBUG] 收到HTTP请求:" << std::endl;
-            std::cerr << "  方法: " << request.method << std::endl;
-            std::cerr << "  路径: " << request.path << std::endl;
-            std::cerr << "  查询参数: " << std::endl;
+            LOG_DEBUG("收到HTTP请求:", "WebServer");
+            LOG_DEBUG("  方法: " + request.method, "WebServer");
+            LOG_DEBUG("  路径: " + request.path, "WebServer");
+            
+            std::string query_params_str = "  查询参数: ";
             for (const auto& param : request.query_params) {
-                std::cerr << "    " << param.first << ": " << param.second << std::endl;
+                query_params_str += fmt::format("{}={}, ", param.first, param.second);
             }
-            std::cerr << "  请求头: " << std::endl;
+            if (!request.query_params.empty()) {
+                query_params_str = query_params_str.substr(0, query_params_str.length() - 2); // 移除最后的逗号和空格
+                LOG_DEBUG(query_params_str, "WebServer");
+            }
+            
+            std::string headers_str = "  请求头: ";
             for (const auto& header : request.headers) {
-                std::cerr << "    " << header.first << ": " << header.second << std::endl;
+                headers_str += fmt::format("{}: {}, ", header.first, header.second);
             }
-            std::cerr << "  请求体长度: " << request.body.length() << std::endl;
+            if (!request.headers.empty()) {
+                headers_str = headers_str.substr(0, headers_str.length() - 2); // 移除最后的逗号和空格
+                LOG_DEBUG(headers_str, "WebServer");
+            }
+            
+            LOG_DEBUG("  请求体长度: " + std::to_string(request.body.length()), "WebServer");
 
             // 添加请求超时处理
             request.headers["X-Request-Timeout"] = "30000";  // 30秒超时
@@ -165,20 +179,20 @@ public:
 
             // 检查是否是静态文件请求
             if (!(request.path.substr(0, 5) == "/api/") && handleStaticFileRequest(nc, hm, request)) {
-                std::cerr << "[WEB][DEBUG] 已处理静态文件请求: " << request.path << std::endl;
+                LOG_DEBUG("已处理静态文件请求: " + request.path, "WebServer");
                 return;
             }
 
             // 处理REST请求
-            std::cerr << "[WEB][DEBUG] 转发到REST处理器: " << request.path << std::endl;
+            LOG_DEBUG("转发到REST处理器: " + request.path, "WebServer");
             HttpResponse response = rest_handler_->handleRequest(request);
 
             // 打印响应信息
-            std::cerr << "[WEB][DEBUG] REST处理器响应:" << std::endl;
-            std::cerr << "  状态码: " << response.status_code << std::endl;
-            std::cerr << "  状态消息: " << response.status_message << std::endl;
-            std::cerr << "  内容类型: " << response.content_type << std::endl;
-            std::cerr << "  响应体长度: " << response.body.length() << std::endl;
+            LOG_DEBUG("REST处理器响应:", "WebServer");
+            LOG_DEBUG("  状态码: " + std::to_string(response.status_code), "WebServer");
+            LOG_DEBUG("  状态消息: " + response.status_message, "WebServer");
+            LOG_DEBUG("  内容类型: " + response.content_type, "WebServer");
+            LOG_DEBUG("  响应体长度: " + std::to_string(response.body.length()), "WebServer");
 
             // 处理流式响应
             if (response.is_streaming) {
@@ -192,7 +206,7 @@ public:
             // 错误计数增加
             server_->error_count_++;
             
-            std::cerr << "[WEB][ERROR] 处理请求时发生错误: " << e.what() << std::endl;
+            LOG_ERROR("处理请求时发生错误: " + std::string(e.what()), "WebServer");
             
             // 发送错误响应
             HttpResponse error_response;
@@ -421,26 +435,26 @@ WebServer::~WebServer() {
 }
 
 bool WebServer::initialize(const WebServerConfig& config, std::shared_ptr<RestHandler> rest_handler) {
-    std::cerr << "[WEB][web_server.cpp:initialize] 开始初始化Web服务器..." << std::endl;
+    LOG_DEBUG("开始初始化Web服务器...", "WebServer");
 
     if (is_initialized_) {
-        std::cerr << "[WEB][web_server.cpp:initialize] Web服务器已经初始化" << std::endl;
+        LOG_DEBUG("Web服务器已经初始化", "WebServer");
         return true;
     }
 
-    std::cerr << "[WEB][web_server.cpp:initialize] 设置配置..." << std::endl;
+    LOG_DEBUG("设置配置...", "WebServer");
     config_ = config;
     rest_handler_ = rest_handler;
 
-    std::cerr << "[WEB][web_server.cpp:initialize] 初始化实现..." << std::endl;
+    LOG_DEBUG("初始化实现...", "WebServer");
     if (!impl_->initialize(config, rest_handler)) {
-        std::cerr << "[WEB][web_server.cpp:initialize] 无法初始化Web服务器实现" << std::endl;
+        LOG_ERROR("无法初始化Web服务器实现", "WebServer");
         return false;
     }
-    std::cerr << "[WEB][web_server.cpp:initialize] 实现初始化成功" << std::endl;
+    LOG_DEBUG("实现初始化成功", "WebServer");
 
     is_initialized_ = true;
-    std::cerr << "[WEB][web_server.cpp:initialize] Web服务器初始化成功" << std::endl;
+    LOG_DEBUG("Web服务器初始化成功", "WebServer");
     return true;
 }
 

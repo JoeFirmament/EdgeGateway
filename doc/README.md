@@ -535,3 +535,98 @@ Web界面支持以下功能：
    - 其他模块日志
 
    > 注意：请定期清理日志文件以避免占用过多磁盘空间。
+
+## 日志系统使用说明
+
+### 日志级别
+
+系统支持以下日志级别（从低到高）：
+
+- **TRACE** - 最详细的日志，用于跟踪程序执行流程
+- **DEBUG** - 调试信息，用于开发阶段的问题定位
+- **INFO** - 一般信息，记录程序运行过程中的重要事件
+- **WARNING** - 警告信息，表示潜在的问题
+- **ERROR** - 错误信息，表示程序执行出错但可以继续运行
+- **CRITICAL** - 严重错误，可能导致程序无法继续运行
+
+### 命令行参数
+
+启动程序时，可以使用以下参数控制日志行为：
+
+```bash
+# 设置日志级别为debug
+./cam_server --log-level debug
+
+# 简写形式
+./cam_server -l info
+
+# 结合其他参数使用
+./cam_server --log-level warning --config /path/to/config.json
+```
+
+### 配置文件中的日志设置
+
+在配置文件中可以通过以下配置项控制日志行为：
+
+```json
+{
+  "log": {
+    "level": "info",
+    "file": "/var/log/cam_server.log",
+    "max_size": 10485760,
+    "max_files": 5,
+    "console": true,
+    "async": true,
+    "async_queue_size": 4096,
+    "flush_interval": 1,
+    "include_timestamp": true,
+    "include_thread_id": false,
+    "include_file_line": false,
+    "include_function_name": false
+  }
+}
+```
+
+### 日志格式
+
+日志条目的默认格式为：
+```
+[MM-DD HH:MM:SS] [LEVEL] [MODULE] Message
+```
+
+例如：
+```
+[05-20 19:15:30] [INFO] [Camera] 摄像头初始化成功
+[05-20 19:15:31] [DEBUG] [Stream] 新的客户端连接: 192.168.1.100
+[05-20 19:15:35] [WARNING] [Storage] 磁盘空间不足: 85% 已使用
+```
+
+### 日志文件轮转
+
+当日志文件达到 `max_size` 设置的大小时，会自动进行日志轮转：
+1. 当前日志文件会被重命名为 `filename.1`
+2. 如果存在 `filename.1`，则重命名为 `filename.2`，依此类推
+3. 最多保留 `max_files` 个日志文件
+4. 创建新的日志文件继续记录
+
+### 最佳实践
+
+1. **开发环境**：
+   - 使用 `--log-level debug` 获取详细日志
+   - 启用 `include_file_line` 和 `include_function_name` 方便调试
+
+2. **生产环境**：
+   - 使用 `--log-level info` 或 `--log-level warning` 减少日志量
+   - 设置合理的 `max_size` 和 `max_files` 避免磁盘空间耗尽
+   - 考虑禁用控制台输出（`"console": false`）以提升性能
+
+3. **问题排查**：
+   - 临时提高日志级别到 `trace` 获取最详细的信息
+   - 检查 `logs/` 目录下的日志文件
+   - 使用 `grep` 过滤特定模块或级别的日志
+
+### 注意事项
+
+1. 异步日志虽然能提高性能，但在程序崩溃时可能会丢失部分未写入磁盘的日志
+2. 日志文件默认保存在 `logs/` 目录，请确保程序有写入权限
+3. 长时间运行的服务建议配置日志轮转和定期清理策略

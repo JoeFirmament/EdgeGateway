@@ -14,3 +14,9 @@ target_include_directories(utils_module PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/../../include
 )
+
+# 链接库
+target_link_libraries(utils_module
+    monitor_module
+    $<IF:$<TARGET_EXISTS:fmt::fmt>,fmt::fmt,fmt>
+)

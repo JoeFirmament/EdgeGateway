@@ -1,12 +1,16 @@
 #include "api/camera_api.h"
-#include "camera/camera_manager.h"
+#include "api/mjpeg_streamer.h"
 #include "monitor/logger.h"
+#include "utils/time_utils.h"  // 添加 TimeUtils 头文件
 #include "utils/string_utils.h"
 #include "utils/file_utils.h"
 #include "video/i_video_recorder.h"
 #include "api/mjpeg_streamer.h"
 #include "camera/format_utils.h"
+#include "camera/camera_manager.h"  // 添加 CameraManager 头文件
 #include <fmt/format.h>
+#include <future>  // 添加 std::promise 和 std::future 支持
+#include <thread>  // 添加 std::this_thread 支持
 
 // 简单的视频录制器实现
 namespace cam_server {
@@ -213,66 +217,66 @@ bool CameraApi::initialize() {
 
 // 注册API路由
 bool CameraApi::registerRoutes(RestHandler& rest_handler) {
-    std::cerr << "[CAMERA_API][DEBUG] 开始注册摄像头API路由..." << std::endl;
+    LOG_DEBUG("开始注册摄像头API路由...", "CameraApi");
 
     // 获取摄像头状态
-    std::cerr << "[CAMERA_API][DEBUG] 注册摄像头状态API: GET /api/camera/status" << std::endl;
+    LOG_DEBUG("注册摄像头状态API: GET /api/camera/status", "CameraApi");
     rest_handler.registerRoute("GET", "/api/camera/status", [this](const HttpRequest& request) {
         return handleGetCameraStatus(request);
     });
 
     // 获取所有摄像头列表
-    std::cerr << "[CAMERA_API][DEBUG] 注册摄像头列表API: GET /api/camera/list" << std::endl;
+    LOG_DEBUG("注册摄像头列表API: GET /api/camera/list", "CameraApi");
     rest_handler.registerRoute("GET", "/api/camera/list", [this](const HttpRequest& request) {
         return handleGetAllCameras(request);
     });
 
     // 打开摄像头
-    std::cerr << "[CAMERA_API][DEBUG] 注册打开摄像头API: POST /api/camera/open" << std::endl;
+    LOG_DEBUG("注册打开摄像头API: POST /api/camera/open", "CameraApi");
     rest_handler.registerRoute("POST", "/api/camera/open", [this](const HttpRequest& request) {
         return handleOpenCamera(request);
     });
 
     // 关闭摄像头
-    std::cerr << "[CAMERA_API][DEBUG] 注册关闭摄像头API: POST /api/camera/close" << std::endl;
+    LOG_DEBUG("注册关闭摄像头API: POST /api/camera/close", "CameraApi");
     rest_handler.registerRoute("POST", "/api/camera/close", [this](const HttpRequest& request) {
         return handleCloseCamera(request);
     });
 
     // 开始预览
-    std::cerr << "[CAMERA_API][DEBUG] 注册开始预览API: POST /api/camera/start_preview" << std::endl;
+    LOG_DEBUG("注册开始预览API: POST /api/camera/start_preview", "CameraApi");
     rest_handler.registerRoute("POST", "/api/camera/start_preview", [this](const HttpRequest& request) {
         return handleStartPreview(request);
     });
 
     // 停止预览
-    std::cerr << "[CAMERA_API][DEBUG] 注册停止预览API: POST /api/camera/stop_preview" << std::endl;
+    LOG_DEBUG("注册停止预览API: POST /api/camera/stop_preview", "CameraApi");
     rest_handler.registerRoute("POST", "/api/camera/stop_preview", [this](const HttpRequest& request) {
         return handleStopPreview(request);
     });
 
     // 拍照
-    std::cerr << "[CAMERA_API][DEBUG] 注册拍照API: POST /api/camera/capture" << std::endl;
+    LOG_DEBUG("注册拍照API: POST /api/camera/capture", "CameraApi");
     rest_handler.registerRoute("POST", "/api/camera/capture", [this](const HttpRequest& request) {
         return handleCaptureImage(request);
     });
 
     // 开始录制
-    std::cerr << "[CAMERA_API][DEBUG] 注册开始录制API: POST /api/camera/start_recording" << std::endl;
+    LOG_DEBUG("注册开始录制API: POST /api/camera/start_recording", "CameraApi");
     rest_handler.registerRoute("POST", "/api/camera/start_recording", [this](const HttpRequest& request) {
         return handleStartRecording(request);
     });
 
     // 停止录制
-    std::cerr << "[CAMERA_API][DEBUG] 注册停止录制API: POST /api/camera/stop_recording" << std::endl;
+    LOG_DEBUG("注册停止录制API: POST /api/camera/stop_recording", "CameraApi");
     rest_handler.registerRoute("POST", "/api/camera/stop_recording", [this](const HttpRequest& request) {
         return handleStopRecording(request);
     });
 
-    std::cerr << "[CAMERA_API][DEBUG] 摄像头API路由注册完成" << std::endl;
+    LOG_DEBUG("摄像头API路由注册完成", "CameraApi");
 
     // 注册MJPEG流API
-    std::cerr << "[CAMERA_API][DEBUG] 注册MJPEG流API: GET /api/camera/mjpeg" << std::endl;
+    LOG_DEBUG("注册MJPEG流API: GET /api/camera/mjpeg", "CameraApi");
     rest_handler.registerRoute("GET", "/api/camera/mjpeg", [this](const HttpRequest& request) {
         return handleMjpegStream(request);
     });
@@ -484,7 +488,7 @@ bool CameraApi::closeCamera() {
         }
 
         // 清理MJPEG流处理器中的客户端连接
-        auto& mjpeg_streamer = api::MjpegStreamer::getInstance();
+        // MJPEG streamer instance is not used in this method
         // 这里我们无法直接清理特定摄像头的客户端，但可以停止MJPEG流处理器
         // 在实际应用中，应该添加一个方法来清理特定摄像头的客户端
 
@@ -511,7 +515,7 @@ bool CameraApi::ensureDirectoryExists(const std::string& path) {
 }
 
 // 拍照并保存图像
-std::string CameraApi::captureImage(const std::string& output_path, int quality) {
+std::string CameraApi::captureImage(const std::string& output_path, int /*quality*/) {
     try {
         // 获取摄像头管理器实例
         auto& camera_manager = camera::CameraManager::getInstance();
@@ -918,7 +922,7 @@ HttpResponse CameraApi::handleStartRecording(const HttpRequest& request) {
 }
 
 // 处理停止录制请求
-HttpResponse CameraApi::handleStopRecording(const HttpRequest& request) {
+HttpResponse CameraApi::handleStopRecording(const HttpRequest& /*request*/) {
     HttpResponse response;
     response.status_code = 200;
     response.content_type = "application/json";
@@ -946,7 +950,7 @@ HttpResponse CameraApi::handleStopRecording(const HttpRequest& request) {
 }
 
 // 处理获取录制状态请求
-HttpResponse CameraApi::handleGetRecordingStatus(const HttpRequest& request) {
+HttpResponse CameraApi::handleGetRecordingStatus(const HttpRequest& /*request*/) {
     HttpResponse response;
     response.status_code = 200;
     response.content_type = "application/json";
@@ -962,7 +966,7 @@ HttpResponse CameraApi::handleGetRecordingStatus(const HttpRequest& request) {
 }
 
 // 处理获取摄像头状态请求
-HttpResponse CameraApi::handleGetCameraStatus(const HttpRequest& request) {
+HttpResponse CameraApi::handleGetCameraStatus(const HttpRequest& /*request*/) {
     try {
         auto& camera_manager = camera::CameraManager::getInstance();
         bool is_open = camera_manager.isDeviceOpen();
@@ -1024,7 +1028,7 @@ HttpResponse CameraApi::handleGetCameraStatus(const HttpRequest& request) {
 }
 
 // 处理关闭摄像头的请求
-HttpResponse CameraApi::handleCloseCamera(const HttpRequest& request) {
+HttpResponse CameraApi::handleCloseCamera(const HttpRequest& /*request*/) {
     HttpResponse response;
     response.status_code = 200;
     response.content_type = "application/json";
@@ -1102,55 +1106,81 @@ HttpResponse CameraApi::handleMjpegStream(const HttpRequest& request) {
         return response;
     }
 
-    // 使用具有原子操作的共享指针来跟踪连接状态
-    auto connection_status = std::make_shared<std::atomic<bool>>(true);
+    // 使用原子变量来跟踪连接状态
+    auto connection_ok = std::make_shared<std::atomic<bool>>(true);
+    auto connection_established = std::make_shared<std::promise<bool>>();
+    auto connection_future = connection_established->get_future();
+    std::weak_ptr<std::atomic<bool>> connection_weak(connection_ok);
+    LOG_DEBUG("创建连接状态跟踪器，初始状态: true", "CameraApi");
 
     // 添加流回调
-    response.stream_callback = [this, client_id, camera_id, connection_status](std::function<void(const std::vector<uint8_t>&)> write_callback) {
+    response.stream_callback = [this, client_id, camera_id, connection_ok, connection_established](std::function<void(const std::vector<uint8_t>&)> write_callback) {
+        LOG_DEBUG("进入流回调，客户端ID: " + client_id, "CameraApi");
         LOG_INFO("开始设置MJPEG流客户端: " + client_id, "CameraApi");
         
         // 创建一个弱引用，用于在回调中检查连接状态
-        std::weak_ptr<std::atomic<bool>> connection_weak = connection_status;
+        std::weak_ptr<std::atomic<bool>> connection_weak(connection_ok);
+        LOG_DEBUG("创建连接状态弱引用，客户端ID: " + client_id, "CameraApi");
         
         // 发送初始HTTP头部，确保浏览器能够识别MJPEG流
         std::string initial_boundary = "--frame\r\n";
         std::vector<uint8_t> initial_data(initial_boundary.begin(), initial_boundary.end());
+        LOG_DEBUG("准备发送初始边界数据，大小: " + std::to_string(initial_data.size()) + " 字节", "CameraApi");
+        
         try {
+            LOG_DEBUG("调用write_callback发送初始边界", "CameraApi");
             write_callback(initial_data);
-            LOG_INFO("已发送MJPEG流初始边界: " + client_id, "CameraApi");
+            LOG_INFO("已成功发送MJPEG流初始边界，客户端ID: " + client_id, "CameraApi");
         } catch (const std::exception& e) {
-            LOG_ERROR("发送MJPEG流初始边界失败: " + std::string(e.what()), "CameraApi");
+            LOG_ERROR("发送MJPEG流初始边界失败: " + std::string(e.what()) + "，客户端ID: " + client_id, "CameraApi");
             if (auto conn = connection_weak.lock()) {
+                LOG_DEBUG("设置连接状态为false (初始边界发送失败)", "CameraApi");
                 conn->store(false, std::memory_order_release);
+            } else {
+                LOG_ERROR("无法获取连接状态引用 (初始边界发送失败)", "CameraApi");
             }
             return;
         }
         
         // 创建一个线程安全的回调函数，捕获连接状态
-        auto safe_write_callback = [write_callback, connection_weak](const std::vector<uint8_t>& data) {
+        auto safe_write_callback = [write_callback, connection_weak, client_id](const std::vector<uint8_t>& data) {
             // 检查连接是否仍然活跃
             auto conn = connection_weak.lock();
-            if (!conn || !conn->load(std::memory_order_acquire)) {
-                // 连接已关闭，不要尝试写入
+            if (!conn) {
+                LOG_DEBUG("无法获取连接状态引用，客户端ID: " + client_id, "CameraApi");
+                return;
+            }
+            
+            bool is_connected = conn->load(std::memory_order_acquire);
+            LOG_DEBUG("检查连接状态，客户端ID: " + client_id + ", 状态: " + (is_connected ? "已连接" : "已断开"), "CameraApi");
+            
+            if (!is_connected) {
+                LOG_DEBUG("连接已关闭，跳过写入数据，客户端ID: " + client_id, "CameraApi");
                 return;
             }
             
             try {
+                LOG_DEBUG("准备发送数据，大小: " + std::to_string(data.size()) + " 字节，客户端ID: " + client_id, "CameraApi");
                 write_callback(data);
+                LOG_DEBUG("成功发送数据，大小: " + std::to_string(data.size()) + " 字节，客户端ID: " + client_id, "CameraApi");
             } catch (const std::exception& e) {
+                LOG_ERROR("写入数据时发生异常: " + std::string(e.what()) + "，客户端ID: " + client_id, "CameraApi");
                 // 写入失败，标记连接为关闭
                 if (auto conn_ptr = connection_weak.lock()) {
+                    LOG_DEBUG("设置连接状态为false (写入异常)", "CameraApi");
                     conn_ptr->store(false, std::memory_order_release);
                 }
             } catch (...) {
+                LOG_ERROR("写入数据时发生未知异常，客户端ID: " + client_id, "CameraApi");
                 // 写入失败，标记连接为关闭
                 if (auto conn_ptr = connection_weak.lock()) {
+                    LOG_DEBUG("设置连接状态为false (未知异常)", "CameraApi");
                     conn_ptr->store(false, std::memory_order_release);
                 }
             }
         };
         
-        // 添加客户端前先检查连接状态
+        // 检查连接是否仍然活跃
         if (auto conn = connection_weak.lock()) {
             if (!conn->load(std::memory_order_acquire)) {
                 LOG_WARNING("连接已关闭，不添加MJPEG客户端: " + client_id, "CameraApi");
@@ -1162,25 +1192,26 @@ HttpResponse CameraApi::handleMjpegStream(const HttpRequest& request) {
         }
         
         // 添加MJPEG客户端
+        LOG_DEBUG("准备添加MJPEG客户端，客户端ID: " + client_id + ", 摄像头ID: " + camera_id, "CameraApi");
+        
+        // 使用原子变量来跟踪连接状态
+        auto connection_ok_local = std::make_shared<std::atomic<bool>>(true);
+        
+        // 添加客户端
         bool client_added = mjpeg_streamer_.addClient(client_id, camera_id,
             // 帧回调
-            [safe_write_callback, client_id, connection_weak, this](const std::vector<uint8_t>& frame_data) {
-                // 检查连接是否仍然活跃
-                auto conn = connection_weak.lock();
-                if (!conn || !conn->load(std::memory_order_acquire)) {
-                    // 连接已关闭，移除客户端
-                    LOG_INFO("连接已关闭，移除MJPEG客户端: " + client_id, "CameraApi");
-                    mjpeg_streamer_.removeClient(client_id);
-                    return;
-                }
-                
-                // 验证帧数据
-                if (frame_data.empty()) {
-                    LOG_WARNING("收到空帧数据，跳过: client_id=" + client_id, "CameraApi");
-                    return;
-                }
-                
+            [safe_write_callback, client_id, connection_ok_local, this](const std::vector<uint8_t>& frame_data) {
                 try {
+                    LOG_DEBUG("收到帧数据，大小: " + std::to_string(frame_data.size()) + " 字节，客户端ID: " + client_id, "CameraApi");
+                    
+                    // 检查连接是否仍然活跃
+                    if (!connection_ok_local->load(std::memory_order_acquire)) {
+                        // 连接已关闭，移除客户端
+                        LOG_INFO("连接已关闭，移除MJPEG客户端: " + client_id, "CameraApi");
+                        mjpeg_streamer_.removeClient(client_id);
+                        return;
+                    }
+                    
                     // 构建MJPEG帧
                     std::string header = "\r\n--frame\r\nContent-Type: image/jpeg\r\nContent-Length: " +
                                        std::to_string(frame_data.size()) + "\r\n\r\n";
@@ -1196,21 +1227,18 @@ HttpResponse CameraApi::handleMjpegStream(const HttpRequest& request) {
                               ", client_id=" + client_id, "CameraApi");
                     
                 } catch (const std::exception& e) {
-                    LOG_ERROR("发送MJPEG帧时出错: " + std::string(e.what()) + ", client_id=" + client_id, "CameraApi");
+                    LOG_ERROR("处理MJPEG帧时出错: " + std::string(e.what()) + 
+                              ", client_id=" + client_id, "CameraApi");
                     // 标记连接为关闭
-                    if (auto conn_ptr = connection_weak.lock()) {
-                        conn_ptr->store(false, std::memory_order_release);
-                        // 在发生错误时自动移除客户端
-                        mjpeg_streamer_.removeClient(client_id);
-                    }
+                    connection_ok_local->store(false, std::memory_order_release);
+                    // 移除客户端
+                    mjpeg_streamer_.removeClient(client_id);
                 } catch (...) {
-                    LOG_ERROR("发送MJPEG帧时出现未知错误, client_id=" + client_id, "CameraApi");
+                    LOG_ERROR("处理MJPEG帧时出现未知错误, client_id=" + client_id, "CameraApi");
                     // 标记连接为关闭
-                    if (auto conn_ptr = connection_weak.lock()) {
-                        conn_ptr->store(false, std::memory_order_release);
-                        // 在发生错误时自动移除客户端
-                        mjpeg_streamer_.removeClient(client_id);
-                    }
+                    connection_ok_local->store(false, std::memory_order_release);
+                    // 移除客户端
+                    mjpeg_streamer_.removeClient(client_id);
                 }
             },
             // 错误回调
@@ -1234,19 +1262,50 @@ HttpResponse CameraApi::handleMjpegStream(const HttpRequest& request) {
         if (!client_added) {
             LOG_ERROR("无法添加MJPEG客户端: " + client_id, "CameraApi");
             if (auto conn = connection_weak.lock()) {
+                LOG_DEBUG("设置连接状态为false (添加客户端失败)", "CameraApi");
                 conn->store(false, std::memory_order_release);
+            } else {
+                LOG_ERROR("无法获取连接状态引用 (添加客户端失败)", "CameraApi");
             }
+            connection_established->set_value(false);
         } else {
             LOG_INFO("成功添加MJPEG客户端: " + client_id, "CameraApi");
+            // 使用 chrono 获取当前时间戳
+            auto now = std::chrono::system_clock::now();
+            auto duration = now.time_since_epoch();
+            auto micros = std::chrono::duration_cast<std::chrono::microseconds>(duration).count();
+            LOG_DEBUG("客户端添加成功，当前时间: " + std::to_string(micros), "CameraApi");
+            
+            // 等待一小段时间确保连接建立
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            connection_established->set_value(true);
         }
     };
 
-    LOG_INFO("MJPEG流请求处理完成: " + client_id, "CameraApi");
+    // 等待连接建立或超时
+    auto start = std::chrono::steady_clock::now();
+    while (!connection_ok->load() && 
+           std::chrono::steady_clock::now() - start < std::chrono::seconds(1)) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    
+    if (!connection_ok->load()) {
+        LOG_WARNING("MJPEG流连接建立超时: " + client_id, "CameraApi");
+        if (auto conn = connection_weak.lock()) {
+            conn->store(false, std::memory_order_release);
+        }
+        response.status_code = 500;
+        response.content_type = "application/json";
+        response.body = "{\"status\":\"error\",\"message\":\"连接建立超时\"}";
+    } else {
+        LOG_INFO("MJPEG流请求处理完成: " + client_id, "CameraApi");
+    }
+    
     return response;
 }
 
 // 处理获取所有摄像头的请求
-HttpResponse CameraApi::handleGetAllCameras(const HttpRequest& request) {
+HttpResponse CameraApi::handleGetAllCameras(const HttpRequest& /*request*/) {
     HttpResponse response;
     response.status_code = 200;
     response.content_type = "application/json";
@@ -1407,7 +1466,7 @@ HttpResponse CameraApi::handleOpenCamera(const HttpRequest& request) {
 }
 
 // 处理启动摄像头预览的请求
-HttpResponse CameraApi::handleStartPreview(const HttpRequest& request) {
+HttpResponse CameraApi::handleStartPreview(const HttpRequest& /*request*/) {
     HttpResponse response;
     response.status_code = 200;
     response.content_type = "application/json";
@@ -1429,7 +1488,7 @@ HttpResponse CameraApi::handleStartPreview(const HttpRequest& request) {
 }
 
 // 处理停止摄像头预览的请求
-HttpResponse CameraApi::handleStopPreview(const HttpRequest& request) {
+HttpResponse CameraApi::handleStopPreview(const HttpRequest& /*request*/) {
     HttpResponse response;
     response.status_code = 200;
     response.content_type = "application/json";

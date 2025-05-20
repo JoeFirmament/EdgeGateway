@@ -1,4 +1,4 @@
-#include <iostream>  // for std::cout, std::cerr, std::endl
+#include <iostream>  // for std::cout, std::endl
 #include <string>
 #include <memory>
 #include <csignal>
@@ -12,6 +12,10 @@
 #include <sys/utsname.h>
 #include <locale.h>  // 添加locale头文件，用于设置本地化
 #include <filesystem>
+
+// 日志头文件
+#include "monitor/logger.h"
+#include "utils/debug_utils.h"
 
 // 包含各模块的头文件
 #include "camera/camera_manager.h"
@@ -32,26 +36,36 @@ using namespace cam_server;
 // 全局变量，用于信号处理
 volatile sig_atomic_t g_running = 1;
 volatile sig_atomic_t g_signal_received = 0;
+volatile sig_atomic_t g_terminate = 0;
 api::ApiServer* g_api_server = nullptr;
 
 // 信号处理函数
 void signal_handler(int signal) {
-    std::cout << "\n收到信号: " << signal << std::endl;
+    // 使用原子操作设置信号标志
+    g_signal_received = signal;
     
-    if (signal == SIGINT || signal == SIGTERM) {
-        std::cout << "正在优雅地关闭服务器..." << std::endl;
+    // 第一次收到信号，开始优雅关闭
+    if (g_running) {
+        LOG_INFO("收到信号 " + std::to_string(signal) + "，正在优雅地关闭服务器...", "SignalHandler");
         g_running = 0;
         
+        // 通知 API 服务器停止
         if (g_api_server) {
             g_api_server->stop();
         }
+    } 
+    // 第二次收到信号，强制退出
+    else if (!g_terminate) {
+        LOG_WARNING("收到第二次信号 " + std::to_string(signal) + "，强制退出...", "SignalHandler");
+        g_terminate = 1;
+        exit(1);  // 强制退出
     }
 }
 
 // 打印欢迎信息
 void print_welcome() {
     std::cout << "=======================================" << std::endl;
-    std::cout << "  RK3588 摄像头服务器 (C++ 版本)" << std::endl;
+    std::cout << "  Luban 边缘服务器  " << std::endl;
     std::cout << "  版本: 0.1.0" << std::endl;
     std::cout << "=======================================" << std::endl;
     std::cout << "正在初始化..." << std::endl;
@@ -59,16 +73,17 @@ void print_welcome() {
 
 // 打印使用说明
 void print_usage(const char* program_name) {
-    std::cout << "用法: " << program_name << " [选项]" << std::endl;
-    std::cout << "选项:" << std::endl;
-    std::cout << "  -h, --help                 显示此帮助信息" << std::endl;
-    std::cout << "  -c, --config <文件>        指定配置文件路径" << std::endl;
-    std::cout << "  -v, --version              显示版本信息" << std::endl;
-    std::cout << "  -d, --device <设备路径>    指定摄像头设备" << std::endl;
-    std::cout << "  -r, --resolution <宽x高>   指定分辨率" << std::endl;
-    std::cout << "  -f, --fps <帧率>           指定帧率" << std::endl;
-    std::cout << "  -o, --output <目录>        指定输出目录" << std::endl;
-    std::cout << "  -l, --log-level <级别>     指定日志级别 (trace, debug, info, warning, error, critical)" << std::endl;
+    std::cout << "用法: " << program_name << " [选项]\n"
+              << "选项:\n"
+              << "  -h, --help                 显示此帮助信息\n"
+              << "  -c, --config <文件>        指定配置文件路径\n"
+              << "  -v, --version              显示版本信息\n"
+              << "  -d, --device <设备路径>    指定摄像头设备\n"
+              << "  -r, --resolution <宽x高>   指定分辨率\n"
+              << "  -f, --fps <帧率>           指定帧率\n"
+              << "  -o, --output <目录>        指定输出目录\n"
+              << "  -l, --log-level <级别>     指定日志级别 (trace, debug, info, warning, error, critical)"
+              << std::endl;
 }
 
 // 解析命令行参数
@@ -95,7 +110,7 @@ bool parse_args(int argc, char* argv[], std::string& config_path, std::string& d
                 print_usage(argv[0]);
                 return false;
             case 'v':
-                std::cout << "RK3588 摄像头服务器 (C++ 版本) v0.1.0" << std::endl;
+                std::cout << "Luban边缘服务器" << std::endl;
                 return false;
             case 'c':
                 config_path = optarg;
@@ -116,7 +131,10 @@ bool parse_args(int argc, char* argv[], std::string& config_path, std::string& d
                 log_level = optarg;
                 break;
             default:
-                std::cerr << "错误: 未知选项" << std::endl;
+                if (optind < argc) {
+                    LOG_ERROR("未知选项", "Main");
+                    return 1;
+                }
                 print_usage(argv[0]);
                 return false;
         }
@@ -126,14 +144,16 @@ bool parse_args(int argc, char* argv[], std::string& config_path, std::string& d
 }
 
 // 创建目录（如果不存在）
-void create_directory_if_not_exists(const std::string& dir_path) {
+bool create_directory_if_not_exists(const std::string& dir_path) {
     try {
         if (!std::filesystem::exists(dir_path)) {
             std::filesystem::create_directories(dir_path);
             std::cout << "已创建目录: " << dir_path << std::endl;
         }
+        return true;
     } catch (const std::exception& e) {
-        std::cerr << "创建目录失败 '" << dir_path << "': " << e.what() << std::endl;
+        LOG_ERROR("创建目录失败: " + std::string(e.what()), "Main");
+        return false;
     }
 }
 
@@ -151,7 +171,7 @@ bool initialize_logger(const std::string& log_level_str) {
     config.include_level = true;
     config.include_source = true;
     config.include_thread_id = true;
-    config.include_file_line = true;
+    config.include_file_line = false;
     config.include_function = true;
     config.date_format = "%Y-%m-%d %H:%M:%S";
 
@@ -177,46 +197,48 @@ bool initialize_logger(const std::string& log_level_str) {
     return monitor::Logger::getInstance().initialize(config);
 }
 
+// 全局配置管理器实例
+auto& config_manager = utils::ConfigManager::getInstance();
+
 // 初始化配置管理器
 bool initialize_config(const std::string& config_path) {
-    std::cerr << "========== 开始初始化配置管理器 ==========" << std::endl;
-    std::cerr << "配置文件路径: " << config_path << std::endl;
+    LOG_INFO("========== 开始初始化配置管理器 ==========", "Main");
+    LOG_INFO("配置文件路径: " + config_path, "Main");
 
     // 检查配置文件是否存在
     struct stat st;
     if (stat(config_path.c_str(), &st) != 0) {
-        std::cerr << "错误: 配置文件不存在: " << config_path << std::endl;
-        std::cerr << "========== 配置管理器初始化失败 ==========" << std::endl;
+        LOG_ERROR("配置文件不存在: " + config_path, "Main");
+        LOG_ERROR("========== 配置管理器初始化失败 ==========", "Main");
         return false;
     }
 
-    std::cerr << "配置文件检查成功，大小: " << st.st_size << " 字节" << std::endl;
+    LOG_INFO("配置文件检查成功，大小: " + std::to_string(st.st_size) + " 字节", "Main");
 
     // 尝试初始化配置管理器
-    auto& config_manager = utils::ConfigManager::getInstance();
-    std::cerr << "正在调用ConfigManager::initialize()..." << std::endl;
+    LOG_INFO("正在调用ConfigManager::initialize()...", "Main");
     bool result = config_manager.initialize(config_path);
 
     if (result) {
-        std::cerr << "配置管理器初始化成功!" << std::endl;
+        LOG_INFO("配置管理器初始化成功!", "Main");
 
         // 打印一些关键配置项，验证配置是否正确加载
-        std::cerr << "验证关键配置项:" << std::endl;
-        std::cerr << "  API地址: " << config_manager.getString("api.address", "未设置") << std::endl;
-        std::cerr << "  API端口: " << config_manager.getInt("api.port", -1) << std::endl;
-        std::cerr << "  静态文件目录: " << config_manager.getString("api.static_files_dir", "未设置") << std::endl;
-        std::cerr << "  摄像头设备: " << config_manager.getString("camera.device", "未设置") << std::endl;
+        LOG_INFO("验证关键配置项:", "Main");
+        LOG_INFO("  API地址: " + config_manager.getString("api.address", "未设置"), "Main");
+        LOG_INFO("  API端口: " + std::to_string(config_manager.getInt("api.port", -1)), "Main");
+        LOG_INFO("  静态文件目录: " + config_manager.getString("api.static_files_dir", "未设置"), "Main");
+        LOG_INFO("  摄像头设备: " + config_manager.getString("camera.device", "未设置"), "Main");
     } else {
-        std::cerr << "错误: 配置管理器初始化失败!" << std::endl;
+        LOG_ERROR("配置管理器初始化失败!", "Main");
     }
 
-    std::cerr << "========== 配置管理器初始化" << (result ? "成功" : "失败") << " ==========" << std::endl;
+    LOG_INFO("========== 配置管理器初始化" + std::string(result ? "成功" : "失败") + " ==========", "Main");
     return result;
 }
 
 // 初始化存储管理器
 bool initialize_storage(const std::string& output_dir) {
-    auto& config = utils::ConfigManager::getInstance();
+    auto& config = config_manager;
 
     storage::StorageConfig storage_config;
 
@@ -253,7 +275,7 @@ bool initialize_file_manager() {
 
 // 初始化摄像头管理器
 bool initialize_camera_manager(const std::string& device_path, const std::string& resolution, int fps) {
-    auto& config = utils::ConfigManager::getInstance();
+    auto& config = config_manager;
 
     // 如果命令行参数未指定，则使用配置文件中的值
     std::string device = device_path.empty() ? config.getString("camera.device", "/dev/video0") : device_path;
@@ -291,7 +313,7 @@ bool initialize_camera_manager(const std::string& device_path, const std::string
 bool initialize_api_server() {
     LOG_INFO("正在初始化API服务器...", "Main");
     DEBUG_INFO("MAIN", "正在初始化API服务器...");
-    auto& config = utils::ConfigManager::getInstance();
+    auto& config = config_manager;
 
     api::ApiServerConfig api_config;
     api_config.address = config.getString("api.address", "0.0.0.0");
@@ -334,7 +356,7 @@ bool initialize_api_server() {
 
 // 初始化系统监控器
 bool initialize_system_monitor() {
-    auto& config = utils::ConfigManager::getInstance();
+    auto& config = config_manager;
 
     int update_interval_ms = config.getInt("monitor.interval_ms", 1000);
 
@@ -421,10 +443,19 @@ int main(int argc, char* argv[]) {
     setlocale(LC_ALL, "zh_CN.UTF-8");
     
     // 设置信号处理
-    std::signal(SIGINT, signal_handler);   // Ctrl+C
-    std::signal(SIGTERM, signal_handler);  // 终止信号
-    std::signal(SIGABRT, signal_handler);  // 异常终止信号
-    std::signal(SIGQUIT, signal_handler);  // Ctrl+\
+    struct sigaction sa;
+    sa.sa_handler = signal_handler;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = 0;
+    
+    // 注册信号处理
+    sigaction(SIGINT, &sa, nullptr);   // Ctrl+C
+    sigaction(SIGTERM, &sa, nullptr);  // 终止信号
+    sigaction(SIGABRT, &sa, nullptr);  // 异常终止信号
+    sigaction(SIGQUIT, &sa, nullptr);  // Ctrl+Backslash
+    
+    // 忽略 SIGPIPE 信号，防止写入已关闭的 socket 导致程序退出
+    signal(SIGPIPE, SIG_IGN);
 
     // 记录系统信息
     logSystemInfo();
@@ -446,68 +477,95 @@ int main(int argc, char* argv[]) {
 
     try {
         // 初始化日志系统
+        std::cout << "正在初始化日志系统..." << std::endl;
         if (!initialize_logger(log_level)) {
-            std::cerr << "初始化日志系统失败" << std::endl;
+            // 如果日志系统初始化失败，我们无法记录日志，所以直接输出到 stderr
+            // 这里不能使用LOG_ERROR，因为日志系统初始化失败
             return 1;
         }
+        std::cout << "日志系统初始化成功" << std::endl;
 
         LOG_INFO("摄像头服务器启动中...", "Main");
         LOG_INFO("正在初始化配置管理器...", "Main");
 
         // 初始化配置管理器
-        if (!initialize_config(config_path)) {
-            LOG_ERROR("初始化配置管理器失败", "Main");
-            return 1;
+        std::cout << "正在初始化配置管理器..." << std::endl;
+        if (!config_path.empty()) {
+            if (!initialize_config(config_path)) {
+                LOG_ERROR("无法初始化配置管理器", "Main");
+                return 1;
+            }
+            std::cout << "配置管理器初始化成功" << std::endl;
+        } else {
+            std::cout << "未指定配置文件，使用默认配置" << std::endl;
         }
         LOG_INFO("配置管理器初始化成功", "Main");
 
         // 初始化存储管理器
+        std::cout << "正在初始化存储管理器..." << std::endl;
         LOG_INFO("正在初始化存储管理器...", "Main");
         if (!initialize_storage(output_dir)) {
             LOG_ERROR("初始化存储管理器失败", "Main");
+            LOG_ERROR("初始化存储管理器失败", "Main");
             return 1;
         }
+        std::cout << "存储管理器初始化成功" << std::endl;
         LOG_INFO("存储管理器初始化成功", "Main");
 
         // 初始化文件管理器
+        std::cout << "正在初始化文件管理器..." << std::endl;
         LOG_INFO("正在初始化文件管理器...", "Main");
         if (!initialize_file_manager()) {
             LOG_ERROR("初始化文件管理器失败", "Main");
+            LOG_ERROR("初始化文件管理器失败", "Main");
             return 1;
         }
+        std::cout << "文件管理器初始化成功" << std::endl;
         LOG_INFO("文件管理器初始化成功", "Main");
 
         // 初始化摄像头管理器
+        std::cout << "正在初始化摄像头管理器..." << std::endl;
         LOG_INFO("正在初始化摄像头管理器...", "Main");
         if (!initialize_camera_manager(device_path, resolution, fps)) {
             LOG_WARNING("初始化摄像头管理器失败，但将继续运行以测试Web界面", "Main");
+            LOG_WARNING("初始化摄像头管理器失败，但将继续运行以测试Web界面", "Main");
             // 不返回错误，继续运行
         } else {
+            std::cout << "摄像头管理器初始化成功，等待用户通过Web界面配置并启动摄像头" << std::endl;
             LOG_INFO("摄像头管理器初始化成功，等待用户通过Web界面配置并启动摄像头", "Main");
             // 注意：此时摄像头管理器已初始化，但未自动打开摄像头设备
             // 用户需要通过Web界面调用API才会真正打开和启动摄像头
         }
 
         // 初始化API服务器
+        std::cout << "正在初始化API服务器..." << std::endl;
         LOG_INFO("正在初始化API服务器...", "Main");
         if (!initialize_api_server()) {
             LOG_ERROR("初始化API服务器失败", "Main");
+            LOG_ERROR("初始化API服务器失败", "Main");
             return 1;
         }
+        std::cout << "API服务器初始化成功" << std::endl;
         LOG_INFO("API服务器初始化成功", "Main");
 
         // 初始化系统监控器
+        std::cout << "正在初始化系统监控器..." << std::endl;
         if (!initialize_system_monitor()) {
+            LOG_ERROR("初始化系统监控器失败", "Main");
             LOG_ERROR("初始化系统监控器失败", "Main");
             return 1;
         }
+        std::cout << "系统监控器初始化成功" << std::endl;
 
         // 启动API服务器
+        std::cout << "正在启动API服务器..." << std::endl;
         LOG_INFO("正在启动API服务器...", "Main");
         if (!api::ApiServer::getInstance().start()) {
             LOG_ERROR("启动API服务器失败", "Main");
+            LOG_ERROR("启动API服务器失败", "Main");
             return 1;
         }
+        std::cout << "API服务器启动成功" << std::endl;
         LOG_INFO("API服务器启动成功", "Main");
 
         // 检查API服务器状态
@@ -522,10 +580,13 @@ int main(int argc, char* argv[]) {
         LOG_INFO("API服务器地址: " + status.address + ":" + std::to_string(status.port), "Main");
 
         // 启动系统监控器
+        std::cout << "正在启动系统监控器..." << std::endl;
         if (!system::SystemMonitor::getInstance().start()) {
+            LOG_ERROR("启动系统监控器失败", "Main");
             LOG_ERROR("启动系统监控器失败", "Main");
             return 1;
         }
+        std::cout << "系统监控器启动成功" << std::endl;
 
         LOG_INFO("摄像头服务器启动成功", "Main");
         std::cout << "所有模块初始化完成，服务器已启动" << std::endl;
@@ -553,11 +614,11 @@ int main(int argc, char* argv[]) {
                 }
             } catch (const std::exception& e) {
                 LOG_ERROR("主循环异常: " + std::string(e.what()), "Main");
-                std::cerr << "主循环异常: " << e.what() << std::endl;
+                LOG_ERROR("主循环异常: " + std::string(e.what()), "Main");
                 break;
             } catch (...) {
                 LOG_ERROR("主循环未知异常", "Main");
-                std::cerr << "主循环未知异常" << std::endl;
+                LOG_ERROR("主循环未知异常", "Main");
                 break;
             }
         }
@@ -577,7 +638,7 @@ int main(int argc, char* argv[]) {
         LOG_INFO("摄像头服务器已关闭", "Main");
         std::cout << "服务器已关闭" << std::endl;
     } catch (const std::exception& e) {
-        std::cerr << "错误: " << e.what() << std::endl;
+        LOG_ERROR("错误: " + std::string(e.what()), "Main");
         LOG_FATAL("未处理的异常: " + std::string(e.what()), "Main");
         return EXIT_FAILURE;
     }

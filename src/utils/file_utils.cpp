@@ -5,6 +5,7 @@
 #include <cstdio>
 #include <cstring>
 #include <cerrno>
+#include "monitor/logger.h"  // for logging macros
 #include <sys/stat.h>
 #include <sys/statvfs.h>
 #include <dirent.h>
@@ -17,16 +18,16 @@ namespace cam_server {
 namespace utils {
 
 bool FileUtils::fileExists(const std::string& file_path) {
-    std::cerr << "[UTILS][file_utils.cpp:fileExists] 检查文件: " << file_path << std::endl;
+    LOG_DEBUG("检查文件: " + file_path, "FileUtils");
 
     // 使用更简单的方法检查文件是否存在
     FILE* file = fopen(file_path.c_str(), "r");
     if (file) {
         fclose(file);
-        std::cerr << "[UTILS][file_utils.cpp:fileExists] 文件存在并且可以打开" << std::endl;
+        LOG_DEBUG("文件存在并且可以打开: " + file_path, "FileUtils");
         return true;
     } else {
-        std::cerr << "[UTILS][file_utils.cpp:fileExists] 文件不存在或无法打开，错误: " << strerror(errno) << std::endl;
+        LOG_ERROR("文件不存在或无法打开: " + file_path + ", 错误: " + strerror(errno), "FileUtils");
         return false;
     }
 }

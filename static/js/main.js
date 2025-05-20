@@ -1012,8 +1012,18 @@ document.addEventListener('DOMContentLoaded', function() {
             return;
         }
 
+        // 先停止现有的流
+        if (mjpegImage) {
+            console.log('清理现有的MJPEG流');
+            mjpegImage.onload = null;
+            mjpegImage.onerror = null;
+            mjpegImage.src = '';
+            mjpegImage = null;
+        }
+
         const clientId = generateClientId();
-        const streamUrl = `/api/camera/mjpeg?camera_id=${encodeURIComponent(selectedCamera)}&client_id=${clientId}&t=${new Date().getTime()}`;
+        const timestamp = new Date().getTime();
+        const streamUrl = `/api/camera/mjpeg?camera_id=${encodeURIComponent(selectedCamera)}&client_id=${clientId}&t=${timestamp}`;
         
         console.log('开始MJPEG流，URL:', streamUrl);
         showStatus('正在连接MJPEG流...');
@@ -1063,11 +1073,41 @@ document.addEventListener('DOMContentLoaded', function() {
                     console.log(`尝试重新连接MJPEG流 (${streamRetryCount}/${MAX_RETRY_COUNT})`);
                     showError(`MJPEG流连接失败，正在重试 (${streamRetryCount}/${MAX_RETRY_COUNT})`);
                     
+                    // 清理现有的Image对象
+                    if (mjpegImage) {
+                        console.log('清理现有的MJPEG流连接');
+                        mjpegImage.onload = null;
+                        mjpegImage.onerror = null;
+                        mjpegImage.src = '';
+                        mjpegImage = null;
+                    }
+                    
+                    // 创建新的Image对象
+                    mjpegImage = new Image();
+                    
+                    // 设置事件处理器
+                    mjpegImage.onload = function() {
+                        clearTimeout(loadTimeout);
+                        console.log('MJPEG流重连成功');
+                        const preview = document.getElementById('preview');
+                        if (preview) {
+                            preview.src = this.src;
+                        }
+                        streamRetryCount = 0; // 重置重试计数
+                        showSuccess('预览画面已恢复');
+                    };
+                    
+                    mjpegImage.onerror = arguments.callee; // 重用当前错误处理函数
+                    
                     // 使用指数退避策略
                     const retryDelay = Math.min(1000 * Math.pow(2, streamRetryCount - 1), 5000);
+                    console.log(`将在 ${retryDelay}ms 后重试...`);
+                    
                     setTimeout(() => {
                         if (mjpegImage) {
-                            mjpegImage.src = streamUrl + '&retry=' + streamRetryCount;
+                            const retryUrl = `${streamUrl}&retry=${streamRetryCount}&t=${new Date().getTime()}`;
+                            console.log(`重试连接MJPEG流，URL: ${retryUrl}`);
+                            mjpegImage.src = retryUrl;
                         }
                     }, retryDelay);
                 } else {
@@ -1104,13 +1144,35 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function stopMjpegStream() {
+        console.log('正在停止MJPEG流...');
+        
+        // 清理Image对象
         if (mjpegImage) {
-            console.log('停止MJPEG流');
+            console.log('清理MJPEG图像对象');
+            // 先取消所有事件处理器
+            mjpegImage.onload = null;
+            mjpegImage.onerror = null;
+            // 停止当前加载
             mjpegImage.src = '';
+            // 从DOM中移除（如果已添加）
+            if (mjpegImage.parentNode) {
+                mjpegImage.parentNode.removeChild(mjpegImage);
+            }
+            // 释放引用
             mjpegImage = null;
         }
-        streamRetryCount = 0; // 重置重试计数
-        document.getElementById('preview').src = 'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==';
+        
+        // 重置重试计数
+        streamRetryCount = 0;
+        
+        // 清空预览图像
+        const preview = document.getElementById('preview');
+        if (preview) {
+            // 使用透明1x1像素GIF清空预览
+            preview.src = 'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=';
+        }
+        
+        console.log('MJPEG流已停止');
     }
 
     // 生成客户端ID
@@ -1118,6 +1180,21 @@ document.addEventListener('DOMContentLoaded', function() {
         return 'client-' + Math.random().toString(36).substr(2, 9);
     }
 
+    // 页面卸载时清理资源
+    window.addEventListener('beforeunload', function() {
+        console.log('页面即将卸载，正在清理资源...');
+        stopMjpegStream();
+        
+        // 停止所有定时器
+        if (systemInfoInterval) {
+            clearInterval(systemInfoInterval);
+            systemInfoInterval = null;
+        }
+        
+        // 取消所有网络请求（如果使用AbortController）
+        // 清理其他资源...
+    });
+    
     // 绑定应用设置按钮事件
     const applySettingsBtn = document.getElementById('applySettingsBtn');
     if (applySettingsBtn) {

@@ -11,6 +11,14 @@
 #include <linux/videodev2.h>
 #include <cstring>
 #include <iomanip>
+#include <fmt/format.h>
+
+// 日志头文件
+#include "monitor/logger.h"
+#include "utils/debug_utils.h"
+
+// 使用 cam_server 命名空间中的 monitor 子命名空间
+using namespace cam_server::monitor;
 
 // 格式名称映射
 std::map<uint32_t, std::string> format_names = {
@@ -70,21 +78,21 @@ std::string get_format_name(uint32_t format) {
 bool query_device(const std::string& device_path, DeviceInfo& info) {
     int fd = open(device_path.c_str(), O_RDWR);
     if (fd < 0) {
-        std::cerr << "无法打开设备: " << device_path << std::endl;
+        LOG_ERROR(fmt::format("无法打开设备: {}", device_path), "CameraTool");
         return false;
     }
 
     // 获取设备信息
     struct v4l2_capability cap;
     if (ioctl(fd, VIDIOC_QUERYCAP, &cap) < 0) {
-        std::cerr << "无法查询设备能力: " << device_path << std::endl;
+        LOG_ERROR(fmt::format("无法查询设备能力: {}", device_path), "CameraTool");
         close(fd);
         return false;
     }
 
     // 检查是否是视频捕获设备
     if (!(cap.capabilities & V4L2_CAP_VIDEO_CAPTURE)) {
-        std::cerr << "不是视频捕获设备: " << device_path << std::endl;
+        LOG_ERROR(fmt::format("不是视频捕获设备: {}", device_path), "CameraTool");
         close(fd);
         return false;
     }
@@ -167,30 +175,29 @@ std::vector<DeviceInfo> scan_devices() {
 // 显示设备信息
 void display_devices(const std::vector<DeviceInfo>& devices) {
     if (devices.empty()) {
-        std::cout << "未找到可用的视频设备" << std::endl;
+        LOG_INFO("未找到可用的视频设备", "CameraTool");
         return;
     }
     
-    std::cout << "找到 " << devices.size() << " 个视频设备:" << std::endl;
+    LOG_INFO(fmt::format("找到 {} 个视频设备:", devices.size()), "CameraTool");
     
     for (size_t i = 0; i < devices.size(); i++) {
         const auto& device = devices[i];
-        std::cout << "\n[" << i + 1 << "] " << device.path << std::endl;
-        std::cout << "    名称: " << device.name << std::endl;
-        std::cout << "    总线信息: " << device.bus_info << std::endl;
-        std::cout << "    支持的格式和分辨率:" << std::endl;
+        std::string device_info = fmt::format("\n[{}] {}\n    名称: {}\n    总线信息: {}\n    支持的格式和分辨率:", 
+            i + 1, device.path, device.name, device.bus_info);
+        LOG_INFO(device_info, "CameraTool");
         
         for (const auto& format : device.formats) {
-            std::cout << "      * " << format.first << ": ";
+            std::string format_info = fmt::format("      * {}: ", format.first);
             bool first = true;
             for (const auto& res : format.second) {
                 if (!first) {
-                    std::cout << ", ";
+                    format_info += ", ";
                 }
-                std::cout << res.width << "x" << res.height;
+                format_info += fmt::format("{}x{}", res.width, res.height);
                 first = false;
             }
-            std::cout << std::endl;
+            LOG_INFO(format_info, "CameraTool");
         }
     }
 }
@@ -209,7 +216,7 @@ bool select_device(const std::vector<DeviceInfo>& devices,
     std::cin >> device_index;
     
     if (device_index < 1 || device_index > static_cast<int>(devices.size())) {
-        std::cout << "无效的设备索引" << std::endl;
+        LOG_ERROR("无效的设备索引", "CameraTool");
         return false;
     }
     
@@ -221,9 +228,9 @@ bool select_device(const std::vector<DeviceInfo>& devices,
         formats.push_back(format.first);
     }
     
-    std::cout << "\n可用格式:" << std::endl;
+    LOG_INFO("\n可用格式:", "CameraTool");
     for (size_t i = 0; i < formats.size(); i++) {
-        std::cout << "[" << i + 1 << "] " << formats[i] << std::endl;
+        LOG_INFO(fmt::format("[{}] {}", i + 1, formats[i]), "CameraTool");
     }
     
     int format_index;
@@ -231,7 +238,7 @@ bool select_device(const std::vector<DeviceInfo>& devices,
     std::cin >> format_index;
     
     if (format_index < 1 || format_index > static_cast<int>(formats.size())) {
-        std::cout << "无效的格式索引" << std::endl;
+        LOG_ERROR("无效的格式索引", "CameraTool");
         return false;
     }
     
@@ -243,9 +250,9 @@ bool select_device(const std::vector<DeviceInfo>& devices,
         selected_device.formats[selected_format].end()
     );
     
-    std::cout << "\n可用分辨率:" << std::endl;
+    LOG_INFO("\n可用分辨率:", "CameraTool");
     for (size_t i = 0; i < resolutions.size(); i++) {
-        std::cout << "[" << i + 1 << "] " << resolutions[i].width << "x" << resolutions[i].height << std::endl;
+        LOG_INFO(fmt::format("[{}] {}x{}", i + 1, resolutions[i].width, resolutions[i].height), "CameraTool");
     }
     
     int resolution_index;
@@ -253,7 +260,7 @@ bool select_device(const std::vector<DeviceInfo>& devices,
     std::cin >> resolution_index;
     
     if (resolution_index < 1 || resolution_index > static_cast<int>(resolutions.size())) {
-        std::cout << "无效的分辨率索引" << std::endl;
+        LOG_ERROR("无效的分辨率索引", "CameraTool");
         return false;
     }
     
@@ -266,25 +273,18 @@ bool select_device(const std::vector<DeviceInfo>& devices,
 void generate_config(const DeviceInfo& device, 
                     const std::string& format,
                     const Resolution& resolution) {
-    std::cout << "\n已选择:" << std::endl;
-    std::cout << "设备: " << device.path << " (" << device.name << ")" << std::endl;
-    std::cout << "格式: " << format << std::endl;
-    std::cout << "分辨率: " << resolution.width << "x" << resolution.height << std::endl;
+    LOG_INFO("\n已选择:", "CameraTool");
+    LOG_INFO(fmt::format("设备: {} ({})", device.path, device.name), "CameraTool");
+    LOG_INFO(fmt::format("格式: {}", format), "CameraTool");
+    LOG_INFO(fmt::format("分辨率: {}x{}", resolution.width, resolution.height), "CameraTool");
     
-    std::cout << "\n命令行参数:" << std::endl;
-    std::cout << "./bin/cam_server --device " << device.path 
-              << " --resolution " << resolution.width << "x" << resolution.height 
-              << " --format " << format << std::endl;
+    std::string cmd_args = fmt::format("\n命令行参数:\n./bin/cam_server --device {} --resolution {}x{} --format {}",
+        device.path, resolution.width, resolution.height, format);
+    LOG_INFO(cmd_args, "CameraTool");
     
-    std::cout << "\n配置文件内容:" << std::endl;
-    std::cout << "{\n"
-              << "    \"camera\": {\n"
-              << "        \"device\": \"" << device.path << "\",\n"
-              << "        \"resolution\": \"" << resolution.width << "x" << resolution.height << "\",\n"
-              << "        \"fps\": 30,\n"
-              << "        \"format\": \"" << format << "\"\n"
-              << "    }\n"
-              << "}" << std::endl;
+    std::string config_content = fmt::format("\n配置文件内容:\n{{\n    \"camera\": {{\n        \"device\": \"{}\",\n        \"resolution\": \"{}x{}\",\n        \"fps\": 30,\n        \"format\": \"{}\"\n    }}\n}}",
+        device.path, resolution.width, resolution.height, format);
+    LOG_INFO(config_content, "CameraTool");
     
     std::cout << "\n是否要更新配置文件? (y/n): ";
     char choice;
@@ -292,17 +292,29 @@ void generate_config(const DeviceInfo& device,
     
     if (choice == 'y' || choice == 'Y') {
         // 更新配置文件的逻辑
-        std::cout << "配置文件已更新" << std::endl;
+        LOG_INFO("配置文件已更新", "CameraTool");
     }
 }
 
 int main() {
-    std::cout << "===== 摄像头设备扫描工具 =====" << std::endl;
+    // 初始化日志系统
+    cam_server::monitor::LogConfig log_config;
+    log_config.console_output = true;
+    log_config.file_output = false;
+    log_config.min_level = cam_server::monitor::LogLevel::DEBUG;
+    
+    if (!cam_server::monitor::Logger::getInstance().initialize(log_config)) {
+        std::cerr << "无法初始化日志系统" << std::endl;
+        return 1;
+    }
+    
+    LOG_INFO("===== 摄像头设备扫描工具 =====", "CameraTool");
     
     auto devices = scan_devices();
     display_devices(devices);
     
     if (devices.empty()) {
+        LOG_ERROR("未找到可用的摄像头设备", "CameraTool");
         return 1;
     }
     
@@ -312,6 +324,8 @@ int main() {
     
     if (select_device(devices, selected_device, selected_format, selected_resolution)) {
         generate_config(selected_device, selected_format, selected_resolution);
+    } else {
+        LOG_ERROR("设备选择失败", "CameraTool");
     }
     
     return 0;

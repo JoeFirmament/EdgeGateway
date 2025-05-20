@@ -15,8 +15,10 @@ target_include_directories(test_for_cam PRIVATE
 
 # 链接库（目标名同步更新）
 target_link_libraries(test_for_cam
+    monitor_module
     ${V4L2_LIBRARIES}
     stdc++fs
+    $<IF:$<TARGET_EXISTS:fmt::fmt>,fmt::fmt,fmt>
 )
 
 # 安装规则（目标名同步更新）

@@ -1,5 +1,5 @@
 #include "camera/format_utils.h"
-#include <iostream>
+#include "monitor/logger.h"
 
 namespace cam_server {
 namespace camera {
@@ -49,29 +49,35 @@ std::string FormatUtils::getPixelFormatName(PixelFormat format) {
 }
 
 PixelFormat FormatUtils::v4l2FormatToPixelFormat(uint32_t v4l2_format) {
-    std::cerr << "[FormatUtils] 转换V4L2格式: 0x" << std::hex << v4l2_format << std::dec << std::endl;
+    LOG_DEBUG("转换V4L2格式: 0x" + 
+             [](uint32_t format) -> std::string {
+                 char buf[9];
+                 snprintf(buf, sizeof(buf), "%08x", format);
+                 return std::string(buf);
+             }(v4l2_format), 
+             "FormatUtils");
     
     switch (v4l2_format) {
         case V4L2_PIX_FMT_YUYV:
-            std::cerr << "  - 识别为: YUYV" << std::endl;
             return PixelFormat::YUYV;
         case V4L2_PIX_FMT_MJPEG:
-            std::cerr << "  - 识别为: MJPEG" << std::endl;
             return PixelFormat::MJPEG;
         case V4L2_PIX_FMT_H264:
-            std::cerr << "  - 识别为: H264" << std::endl;
             return PixelFormat::H264;
         case V4L2_PIX_FMT_NV12:
-            std::cerr << "  - 识别为: NV12" << std::endl;
             return PixelFormat::NV12;
         case V4L2_PIX_FMT_RGB24:
-            std::cerr << "  - 识别为: RGB24" << std::endl;
             return PixelFormat::RGB24;
         case V4L2_PIX_FMT_BGR24:
-            std::cerr << "  - 识别为: BGR24" << std::endl;
             return PixelFormat::BGR24;
         default:
-            std::cerr << "  - 未知格式" << std::endl;
+            LOG_WARNING("未知的V4L2格式: 0x" + 
+                       [](uint32_t format) -> std::string {
+                           char buf[9];
+                           snprintf(buf, sizeof(buf), "%08x", format);
+                           return std::string(buf);
+                       }(v4l2_format), 
+                       "FormatUtils");
             return PixelFormat::UNKNOWN;
     }
 }

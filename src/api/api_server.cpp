@@ -3,6 +3,7 @@
 #include "api/web_server.h"
 #include "api/mjpeg_streamer.h"
 #include "api/camera_api.h"
+#include "monitor/logger.h"
 #include "camera/camera_manager.h"
 #include "monitor/logger.h"
 #include "system/system_monitor.h"
@@ -50,7 +51,7 @@ ApiServer::~ApiServer() {
 }
 
 bool ApiServer::initialize(const ApiServerConfig& config) {
-    std::cerr << "[API][DEBUG] 初始化API服务器..." << std::endl;
+    LOG_DEBUG("初始化API服务器...", "ApiServer");
 
     // 保存配置
     config_ = config;
@@ -58,20 +59,20 @@ bool ApiServer::initialize(const ApiServerConfig& config) {
     // 创建Web服务器
     web_server_ = std::make_unique<WebServer>();
     if (!web_server_) {
-        std::cerr << "[API][ERROR] 创建Web服务器失败" << std::endl;
+        LOG_ERROR("创建Web服务器失败", "ApiServer");
         return false;
     }
 
     // 创建REST处理器
     rest_handler_ = std::make_shared<RestHandler>(config_.enable_cors, config_.cors_allowed_origins);
     if (!rest_handler_) {
-        std::cerr << "[API][ERROR] 创建REST处理器失败" << std::endl;
+        LOG_ERROR("创建REST处理器失败", "ApiServer");
         return false;
     }
 
     // 初始化REST处理器
     if (!rest_handler_->initialize(config_.enable_api_key, config_.api_key)) {
-        std::cerr << "[API][ERROR] 初始化REST处理器失败" << std::endl;
+        LOG_ERROR("初始化REST处理器失败", "ApiServer");
         return false;
     }
 
@@ -96,14 +97,14 @@ bool ApiServer::initialize(const ApiServerConfig& config) {
     web_config.log_level = config_.log_level;
 
     if (!web_server_->initialize(web_config, rest_handler_)) {
-        std::cerr << "[API][ERROR] 初始化Web服务器失败" << std::endl;
+        LOG_ERROR("初始化Web服务器失败", "ApiServer");
         return false;
     }
 
     // 设置初始化标志
     is_initialized_ = true;
 
-    std::cerr << "[API][DEBUG] API服务器初始化成功" << std::endl;
+    LOG_DEBUG("API服务器初始化成功", "ApiServer");
     return true;
 }
 
@@ -135,9 +136,9 @@ bool ApiServer::start() {
     // 检查静态文件目录是否存在
     struct stat st;
     if (stat(config_.static_files_dir.c_str(), &st) != 0) {
-        std::cerr << "[API] 静态文件目录不存在: " << config_.static_files_dir << std::endl;
+        LOG_WARNING("静态文件目录不存在: " + config_.static_files_dir, "ApiServer");
     } else {
-        std::cerr << "[API] 静态文件目录存在: " << config_.static_files_dir << std::endl;
+        LOG_DEBUG("静态文件目录存在: " + config_.static_files_dir, "ApiServer");
     }
 
     // 检查静态文件目录内容（替换system命令）
@@ -152,19 +153,19 @@ bool ApiServer::start() {
 
     // 启动Web服务器
     LOG_INFO("正在启动Web服务器...", "ApiServer");
-    std::cerr << "[API] 正在启动Web服务器..." << std::endl;
+    LOG_DEBUG("正在启动Web服务器...", "ApiServer");
     if (!web_server_) {
-        std::cerr << "[API] Web服务器对象为空" << std::endl;
+        LOG_ERROR("Web服务器对象为空", "ApiServer");
         LOG_ERROR("Web服务器对象为空", "ApiServer");
         return false;
     }
 
     // 检查Web服务器是否已初始化
-    std::cerr << "[API] Web服务器已创建" << std::endl;
+    LOG_DEBUG("Web服务器已创建", "ApiServer");
 
     // 检查Web服务器配置
-    std::cerr << "[API] Web服务器配置: 地址=" << config_.address << ", 端口=" << config_.port <<
-        ", 静态文件目录=" << config_.static_files_dir << std::endl;
+    LOG_DEBUG(fmt::format("Web服务器配置: 地址={}, 端口={}, 静态文件目录={}", 
+        config_.address, config_.port, config_.static_files_dir), "ApiServer");
 
     if (!web_server_->start()) {
         std::lock_guard<std::mutex> lock(status_mutex_);
@@ -174,14 +175,14 @@ bool ApiServer::start() {
             status_callback_(status_);
         }
         LOG_ERROR("无法启动Web服务器", "ApiServer");
-        std::cerr << "[API] 无法启动Web服务器" << std::endl;
+        LOG_ERROR("无法启动Web服务器", "ApiServer");
         return false;
     }
     LOG_INFO("Web服务器启动成功", "ApiServer");
-    std::cerr << "[API] Web服务器启动成功" << std::endl;
+    LOG_DEBUG("Web服务器启动成功", "ApiServer");
 
     // 检查Web服务器是否正在运行
-    std::cerr << "[API] Web服务器已启动" << std::endl;
+    LOG_DEBUG("Web服务器已启动", "ApiServer");
 
     // 更新状态
     {
@@ -314,16 +315,16 @@ void ApiServer::registerApiRoutes() {
 // 注册系统控制API路由
 void ApiServer::registerSystemControlRoutes() {
     if (!rest_handler_) {
-        std::cerr << "[API][ERROR] REST处理器为空，无法注册系统控制API路由" << std::endl;
+        LOG_ERROR("REST处理器为空，无法注册系统控制API路由", "ApiServer");
         return;
     }
 
-    std::cerr << "[API][DEBUG] 开始注册系统控制API路由..." << std::endl;
+    LOG_DEBUG("开始注册系统控制API路由...", "ApiServer");
 
     // 注册系统信息API
-    std::cerr << "[API][DEBUG] 注册系统信息API: GET /api/system/info" << std::endl;
+    LOG_DEBUG("注册系统信息API: GET /api/system/info", "ApiServer");
     rest_handler_->registerRoute("GET", "/api/system/info", [](const HttpRequest&) -> HttpResponse {
-        std::cerr << "[API][DEBUG] 收到系统信息请求" << std::endl;
+        LOG_DEBUG("收到系统信息请求", "SystemInfo");
         HttpResponse response;
         response.status_code = 200;
         response.status_message = "OK";
@@ -405,9 +406,10 @@ void ApiServer::registerSystemControlRoutes() {
             json << "}";
             response.body = json.str();
 
-            std::cerr << "[API][DEBUG] 系统信息API响应: " << response.body << std::endl;
+            // 不记录完整的响应体，只记录调试信息
+            LOG_DEBUG("系统信息API响应已生成", "SystemInfo");
         } catch (const std::exception& e) {
-            std::cerr << "[API][ERROR] 获取系统信息时发生错误: " << e.what() << std::endl;
+            LOG_ERROR("获取系统信息时发生错误: " + std::string(e.what()), "SystemInfo");
             response.status_code = 500;
             response.status_message = "Internal Server Error";
             response.body = "{\"status\":\"error\",\"message\":\"" + std::string(e.what()) + "\"}";
@@ -492,7 +494,7 @@ void ApiServer::registerSystemControlRoutes() {
         return response;
     });
 
-    std::cerr << "[API][DEBUG] 系统控制API路由注册完成" << std::endl;
+    LOG_DEBUG("系统控制API路由注册完成", "ApiServer");
     LOG_INFO("系统控制API路由注册成功", "ApiServer");
 }
 

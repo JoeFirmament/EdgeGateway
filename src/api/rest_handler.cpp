@@ -41,44 +41,52 @@ bool RestHandler::registerRoute(const std::string& method, const std::string& pa
 
 // 处理HTTP请求
 HttpResponse RestHandler::handleRequest(const HttpRequest& request) {
-    std::cerr << "\n[REST][DEBUG] 处理REST请求:" << std::endl;
-    std::cerr << "  方法: " << request.method << std::endl;
-    std::cerr << "  路径: " << request.path << std::endl;
+    std::stringstream ss;
+    ss << "处理REST请求: 方法: " << request.method << ", 路径: " << request.path;
+    LOG_DEBUG(ss.str(), "REST");
 
     // 检查API密钥（如果启用）
     if (enable_api_key_ && !api_key_.empty()) {
         auto it = request.headers.find("X-API-Key");
         if (it == request.headers.end() || it->second != api_key_) {
-            std::cerr << "[REST][ERROR] API密钥验证失败" << std::endl;
+            LOG_ERROR("API密钥验证失败", "REST");
             return createErrorResponse(401, "Unauthorized", "Invalid API key");
         }
     }
 
     // 查找路由处理器
     RouteKey route_key{request.method, request.path};
-    std::cerr << "[REST][DEBUG] 查找路由处理器: " << route_key.method << " " << route_key.path << std::endl;
+    std::stringstream ss2;
+    ss2 << "查找路由处理器: " << route_key.method << " " << route_key.path;
+    LOG_DEBUG(ss2.str(), "REST");
 
     auto it = routes_.find(route_key);
     if (it == routes_.end()) {
-        std::cerr << "[REST][ERROR] 未找到路由处理器: " << route_key.method << " " << route_key.path << std::endl;
-        std::cerr << "[REST][DEBUG] 已注册的路由:" << std::endl;
+        std::stringstream ss3;
+        ss3 << "未找到路由处理器: " << route_key.method << " " << route_key.path;
+        LOG_ERROR(ss3.str(), "REST");
+        
+        std::stringstream ss4;
+        ss4 << "已注册的路由:";
         for (const auto& route : routes_) {
-            std::cerr << "  " << route.first.method << " " << route.first.path << std::endl;
+            ss4 << "\n  " << route.first.method << " " << route.first.path;
         }
+        LOG_DEBUG(ss4.str(), "REST");
         return createErrorResponse(404, "Not Found", "Route not found");
     }
 
-    std::cerr << "[REST][DEBUG] 找到路由处理器，开始处理请求" << std::endl;
+    LOG_DEBUG("找到路由处理器，开始处理请求", "REST");
 
     try {
         // 调用路由处理器
         HttpResponse response = it->second(request);
 
-        std::cerr << "[REST][DEBUG] 请求处理完成:" << std::endl;
-        std::cerr << "  状态码: " << response.status_code << std::endl;
-        std::cerr << "  状态消息: " << response.status_message << std::endl;
-        std::cerr << "  内容类型: " << response.content_type << std::endl;
-        std::cerr << "  响应体长度: " << response.body.length() << std::endl;
+        std::stringstream ss5;
+        ss5 << "请求处理完成: 状态码: " << response.status_code 
+           << ", 状态消息: " << response.status_message
+           << ", 内容类型: " << response.content_type
+           << ", 响应体长度: " << response.body.length();
+        LOG_DEBUG(ss5.str(), "REST");
 
         // 添加CORS头
         if (enable_cors_) {
@@ -91,7 +99,9 @@ HttpResponse RestHandler::handleRequest(const HttpRequest& request) {
 
         return response;
     } catch (const std::exception& e) {
-        std::cerr << "[REST][ERROR] 处理请求时发生错误: " << e.what() << std::endl;
+        std::stringstream ss6;
+        ss6 << "处理请求时发生错误: " << e.what();
+        LOG_ERROR(ss6.str(), "REST");
         return createErrorResponse(500, "Internal Server Error", e.what());
     }
 }

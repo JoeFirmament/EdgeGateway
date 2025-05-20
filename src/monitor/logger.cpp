@@ -181,14 +181,14 @@ Logger::Logger() : is_initialized_(false), stop_flag_(false) {
     config_.include_timestamp = true;
     config_.include_level = true;
     config_.include_source = true;
-    config_.include_thread_id = true;
-    config_.include_file_line = true;
-    config_.include_function = true;
+    config_.include_thread_id = false;  // 默认不显示线程ID以减少日志长度
+    config_.include_file_line = false;  // 默认不显示文件行号以减少日志长度
+    config_.include_function = false;   // 默认不显示函数名以减少日志长度
     config_.max_file_size = 10 * 1024 * 1024; // 10MB
     config_.max_file_count = 5;
     config_.async_logging = true;
     config_.async_queue_size = RING_BUFFER_SIZE;
-    config_.date_format = "%Y-%m-%d %H:%M:%S";
+    config_.date_format = "%m-%d %H:%M:%S";  // 简化为 月-日 时:分:秒
     
     // 初始化环形缓冲区
     ring_buffer_ = new char[RING_BUFFER_SIZE * RING_ITEM_SIZE];
@@ -236,28 +236,39 @@ bool Logger::initialize(const LogConfig& config) {
                 std::filesystem::create_directories(log_dir);
             }
         } catch (const std::exception& e) {
-            std::cerr << "创建日志目录失败: " << e.what() << std::endl;
+            LOG_ERROR("创建日志目录失败: {}", e.what());
             return false;
         }
-        
+                
         // 打开日志文件
-        log_file_stream_ = std::make_unique<std::ofstream>(config_.log_file, std::ios::app);
-        if (!log_file_stream_->is_open()) {
-            std::cerr << "打开日志文件失败: " << config_.log_file << std::endl;
+        try {
+            log_file_stream_ = std::make_unique<std::ofstream>();
+            log_file_stream_->open(config_.log_file, std::ios::app);
+            if (!log_file_stream_->is_open()) {
+                std::cerr << "[ERROR] 打开日志文件失败: " << config_.log_file << std::endl;
+                return false;
+            }
+        } catch (const std::exception& e) {
+            std::cerr << "[ERROR] 创建日志文件流时发生异常: " << e.what() << std::endl;
             return false;
         }
+    } else {
+        // 确保文件输出流被正确释放
+        if (log_file_stream_ && log_file_stream_->is_open()) {
+            log_file_stream_->close();
+        }
+        log_file_stream_.reset();
     }
-    
+            
     // 启动异步日志线程
     if (config_.async_logging) {
         startAsyncLogging();
     }
     
+    // 记录初始化成功日志 - 直接输出到控制台，避免使用未初始化的日志系统
+    std::cout << "[INFO] 日志系统初始化成功" << std::endl;
+    
     is_initialized_ = true;
-    
-    // 记录初始化成功日志
-    log(LogLevel::INFO, "日志系统初始化成功", "Logger");
-    
     return true;
 }
 
@@ -360,9 +371,9 @@ void Logger::formatLogEntryToBuffer(const LogEntry& entry, char* buffer, size_t 
         localtime_r(&time_t, &tm_buf);
         #endif
         
-        // 格式化时间
+        // 格式化时间 (简化为 月-日 时:分:秒)
         std::strftime(temp, sizeof(temp), config_.date_format.c_str(), &tm_buf);
-        int bytes = snprintf(buffer + pos, buffer_size - pos, "%s.%03d ", temp, (int)ms);
+        int bytes = snprintf(buffer + pos, buffer_size - pos, "%s ", temp);
         if (bytes > 0) {
             pos += bytes;
         }
@@ -423,18 +434,45 @@ void Logger::formatLogEntryToBuffer(const LogEntry& entry, char* buffer, size_t 
 }
 
 // 写入日志文件
+// 写入日志文件
 void Logger::writeToFile(const char* formatted_entry) {
-    if (!log_file_stream_ || !log_file_stream_->is_open()) {
+    // 如果文件输出未启用，直接返回
+    if (!config_.file_output) {
         return;
     }
     
     std::lock_guard<std::mutex> lock(file_mutex_);
     
-    // 检查日志文件大小并轮转
-    checkAndRotateLogFile();
+    // 确保文件流已打开
+    if (!log_file_stream_ || !log_file_stream_->is_open()) {
+        try {
+            // 尝试重新打开文件
+            log_file_stream_ = std::make_unique<std::ofstream>();
+            log_file_stream_->open(config_.log_file, std::ios::app);
+            if (!log_file_stream_->is_open()) {
+                std::cerr << "[ERROR] 无法打开日志文件: " << config_.log_file << std::endl;
+                return;
+            }
+        } catch (const std::exception& e) {
+            std::cerr << "[ERROR] 打开日志文件失败: " << e.what() << std::endl;
+            return;
+        }
+    }
     
-    // 写入日志
-    (*log_file_stream_) << formatted_entry << std::endl;
+    try {
+        // 检查日志文件大小并轮转
+        checkAndRotateLogFile();
+        
+        // 写入日志
+        *log_file_stream_ << formatted_entry << std::endl;
+        log_file_stream_->flush();
+    } catch (const std::exception& e) {
+        std::cerr << "[ERROR] 写入日志文件失败: " << e.what() << std::endl;
+        // 写入失败时关闭文件流，下次会尝试重新打开
+        if (log_file_stream_ && log_file_stream_->is_open()) {
+            log_file_stream_->close();
+        }
+    }
 }
 
 // 写入控制台

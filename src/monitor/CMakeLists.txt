@@ -14,4 +14,6 @@ target_include_directories(monitor_module PUBLIC
 
 # 链接库
 target_link_libraries(monitor_module
-    utils_module)
+    utils_module
+    $<IF:$<TARGET_EXISTS:fmt::fmt>,fmt::fmt,fmt>
+)
