@@ -20,7 +20,10 @@
 #include <fstream>  // for std::ifstream
 #include <cstring>  // for strerror
 #include <cerrno>   // for errno
+#include <filesystem>  // for fs::directory_iterator
+#include <fmt/format.h>  // for fmt::format
 
+namespace fs = std::filesystem;  // 显式定义命名空间别名
 namespace cam_server {
 namespace api {
 
@@ -129,6 +132,24 @@ bool ApiServer::start() {
              ", HTTPS=" + (config_.use_https ? "是" : "否") +
              ", 静态文件目录=" + config_.static_files_dir, "ApiServer");
 
+    // 检查静态文件目录是否存在
+    struct stat st;
+    if (stat(config_.static_files_dir.c_str(), &st) != 0) {
+        std::cerr << "[API] 静态文件目录不存在: " << config_.static_files_dir << std::endl;
+    } else {
+        std::cerr << "[API] 静态文件目录存在: " << config_.static_files_dir << std::endl;
+    }
+
+    // 检查静态文件目录内容（替换system命令）
+    LOG_DEBUG(fmt::format("静态文件目录: {}", config_.static_files_dir), "ApiServer");
+    try {
+        for (const auto& entry : fs::directory_iterator(config_.static_files_dir)) {
+            LOG_DEBUG(fmt::format("  Found: {}", entry.path().filename().string()), "ApiServer");
+        }
+    } catch (const std::exception& e) {
+        LOG_ERROR(fmt::format("无法列出目录内容: {}", e.what()), "ApiServer");
+    }
+
     // 启动Web服务器
     LOG_INFO("正在启动Web服务器...", "ApiServer");
     std::cerr << "[API] 正在启动Web服务器..." << std::endl;
@@ -144,19 +165,6 @@ bool ApiServer::start() {
     // 检查Web服务器配置
     std::cerr << "[API] Web服务器配置: 地址=" << config_.address << ", 端口=" << config_.port <<
         ", 静态文件目录=" << config_.static_files_dir << std::endl;
-
-    // 检查静态文件目录是否存在
-    struct stat st;
-    if (stat(config_.static_files_dir.c_str(), &st) != 0) {
-        std::cerr << "[API] 静态文件目录不存在: " << config_.static_files_dir << std::endl;
-    } else {
-        std::cerr << "[API] 静态文件目录存在: " << config_.static_files_dir << std::endl;
-    }
-
-    // 检查静态文件目录中的文件
-    std::cerr << "[API] 静态文件目录内容:" << std::endl;
-    std::string cmd = "ls -la " + config_.static_files_dir;
-    ::system(cmd.c_str());
 
     if (!web_server_->start()) {
         std::lock_guard<std::mutex> lock(status_mutex_);
@@ -280,32 +288,25 @@ void ApiServer::setStatusCallback(std::function<void(const ApiServerStatus&)> ca
 
 // 注册API路由
 void ApiServer::registerApiRoutes() {
-    std::cerr << "[API][DEBUG] 开始注册API路由..." << std::endl;
+    LOG_DEBUG("开始注册API路由...", "ApiServer");
 
     // 注册摄像头API路由
-    std::cerr << "[API][DEBUG] 注册摄像头API路由..." << std::endl;
+    LOG_DEBUG("注册摄像头状态API: GET /api/camera/status", "ApiServer");
     auto& camera_api = api::CameraApi::getInstance();
     camera_api.registerRoutes(*rest_handler_);
 
     // 注册系统控制API路由
-    std::cerr << "[API][DEBUG] 注册系统控制API路由..." << std::endl;
+    LOG_DEBUG("注册系统控制API路由...", "ApiServer");
     registerSystemControlRoutes();
 
     // 注册根路径重定向
-    std::cerr << "[API][DEBUG] 注册根路径重定向..." << std::endl;
+    LOG_DEBUG("注册根路径重定向...", "ApiServer");
     rest_handler_->registerRoute("GET", "/", [](const HttpRequest&) -> HttpResponse {
         HttpResponse response;
         response.status_code = 302;  // 临时重定向
         response.headers["Location"] = "/index.html";
         return response;
     });
-
-    std::cerr << "[API][DEBUG] API路由注册完成" << std::endl;
-    std::cerr << "[API][DEBUG] 已注册的路由:" << std::endl;
-    auto routes = rest_handler_->getRegisteredRoutes();
-    for (const auto& route : routes) {
-        std::cerr << "  " << route << std::endl;
-    }
 
     LOG_INFO("API路由注册成功", "ApiServer");
 }

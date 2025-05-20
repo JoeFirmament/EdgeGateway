@@ -6,6 +6,7 @@
 #include "video/i_video_recorder.h"
 #include "api/mjpeg_streamer.h"
 #include "camera/format_utils.h"
+#include <fmt/format.h>
 
 // 简单的视频录制器实现
 namespace cam_server {
@@ -333,10 +334,13 @@ bool CameraApi::openCamera(const std::string& device_path,
 bool CameraApi::queryDevice(const std::string& device_path, CameraDeviceInfo& info) {
     int fd = open(device_path.c_str(), O_RDWR);
     if (fd < 0) {
-        LOG_ERROR("无法打开设备: " + device_path, "CameraApi");
+        LOG_ERROR(fmt::format("无法打开设备: {} (errno: {})", device_path, strerror(errno)), "CameraApi");
         return false;
     }
 
+    // 简化V4L2技术细节日志
+    LOG_DEBUG(fmt::format("查询设备能力: {}", device_path), "CameraApi");
+    
     // 获取设备信息
     struct v4l2_capability cap;
     if (ioctl(fd, VIDIOC_QUERYCAP, &cap) < 0) {
@@ -1184,6 +1188,13 @@ HttpResponse CameraApi::handleGetAllCameras(const HttpRequest& request) {
 
 // 处理打开摄像头的请求
 HttpResponse CameraApi::handleOpenCamera(const HttpRequest& request) {
+    // 添加客户端行为跟踪
+    const std::string client_ip = request.headers.count("X-Forwarded-For") ? 
+                                 request.headers.at("X-Forwarded-For") : 
+                                 request.client_ip;
+                                  
+    LOG_INFO(fmt::format("客户端[{}]请求打开摄像头", client_ip), "CameraApi");
+    
     HttpResponse response;
     response.status_code = 200;
     response.content_type = "application/json";
@@ -1257,10 +1268,11 @@ HttpResponse CameraApi::handleOpenCamera(const HttpRequest& request) {
 
         // 打开摄像头
         if (openCamera(device_path, format, width, height, fps)) {
+            LOG_INFO(fmt::format("客户端[{}]成功打开摄像头: {}", client_ip, device_path), "CameraApi");
             response.body = "{\"status\":\"success\",\"message\":\"摄像头已成功打开\"}";
         } else {
+            LOG_ERROR(fmt::format("客户端[{}]无法打开摄像头: {}", client_ip, device_path), "CameraApi");
             response.status_code = 500;
-            response.body = "{\"status\":\"error\",\"message\":\"无法打开摄像头\"}";
         }
     } catch (const std::exception& e) {
         response.status_code = 500;

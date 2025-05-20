@@ -3,23 +3,23 @@ set(CAMERA_TOOL_SOURCES
     camera_tool.cpp
 )
 
-# 创建可执行文件
-add_executable(camera_tool ${CAMERA_TOOL_SOURCES})
+# 创建可执行文件（名称统一为 test_for_cam）
+add_executable(test_for_cam ${CAMERA_TOOL_SOURCES})
 
-# 设置包含目录
-target_include_directories(camera_tool PRIVATE
+# 设置包含目录（目标名同步更新）
+target_include_directories(test_for_cam PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/../../include
     ${V4L2_INCLUDE_DIRS}
 )
 
-# 链接库
-target_link_libraries(camera_tool
+# 链接库（目标名同步更新）
+target_link_libraries(test_for_cam
     ${V4L2_LIBRARIES}
     stdc++fs
 )
 
-# 安装规则
-install(TARGETS camera_tool
+# 安装规则（目标名同步更新）
+install(TARGETS test_for_cam
     RUNTIME DESTINATION bin
 )
