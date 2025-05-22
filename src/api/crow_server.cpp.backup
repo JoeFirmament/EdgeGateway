@@ -1,0 +1,970 @@
+#include "../../include/api/crow_server.h"
+#include "monitor/logger.h"
+#include "utils/file_utils.h"
+#include "utils/debug_utils.h"
+
+#include <string>
+#include <memory>
+#include <functional>
+#include <atomic>
+#include <thread>
+#include <unordered_map>
+#include <unordered_set>
+#include <mutex>
+#include <filesystem>
+#include <fstream>
+#include <sstream>
+#include <chrono>
+#include <random>
+#include <fmt/format.h>
+
+// Crow 头文件
+#include "crow.h"
+#include "system/system_monitor.h"
+
+namespace cam_server {
+namespace api {
+
+// WebSocket 连接信息
+struct WebSocketConnection {
+    std::string client_id;
+    crow::websocket::connection* ws;  // WebSocket 连接指针
+    bool is_connected;
+    std::chrono::steady_clock::time_point last_activity;
+    std::string camera_id;  // 摄像头ID
+};
+
+// CrowServer实现类
+class CrowServer::Impl {
+public:
+    Impl()
+        : is_running_(false)
+        , request_count_(0)
+        , error_count_(0) {
+    }
+
+    ~Impl() {
+        stop();
+    }
+
+    bool initialize(const CrowServerConfig& config, std::shared_ptr<RestHandler> rest_handler) {
+        if (is_initialized_) {
+            LOG_WARNING("Crow服务器已经初始化", "CrowServer");
+            return true;
+        }
+
+        LOG_DEBUG("开始初始化Crow服务器...", "CrowServer");
+
+        try {
+            // 验证配置
+            if (config.port <= 0 || config.port > 65535) {
+                LOG_ERROR("无效的端口号: " + std::to_string(config.port), "CrowServer");
+                return false;
+            }
+
+            // 检查HTTPS配置
+            if (config.use_https) {
+                if (config.ssl_cert_path.empty() || config.ssl_key_path.empty()) {
+                    LOG_ERROR("启用HTTPS需要指定SSL证书和密钥路径", "CrowServer");
+                    return false;
+                }
+
+                // 检查证书和密钥文件是否存在
+                if (!utils::FileUtils::fileExists(config.ssl_cert_path)) {
+                    LOG_ERROR("SSL证书文件不存在: " + config.ssl_cert_path, "CrowServer");
+                    return false;
+                }
+
+                if (!utils::FileUtils::fileExists(config.ssl_key_path)) {
+                    LOG_ERROR("SSL密钥文件不存在: " + config.ssl_key_path, "CrowServer");
+                    return false;
+                }
+
+                LOG_DEBUG(fmt::format("使用HTTPS，证书: {}, 密钥: {}",
+                    config.ssl_cert_path, config.ssl_key_path), "CrowServer");
+            }
+
+            // 保存配置和处理器
+            config_ = config;
+            rest_handler_ = rest_handler;
+
+            // 重置统计信息
+            request_count_ = 0;
+            error_count_ = 0;
+
+            // 创建Crow应用
+            app_ = std::make_unique<crow::SimpleApp>();
+
+            // 设置日志级别
+            LOG_DEBUG("设置Crow日志级别: " + config_.log_level, "CrowServer");
+            if (config_.log_level == "debug") {
+                crow::logger::setLogLevel(crow::LogLevel::DEBUG);
+                LOG_DEBUG("Crow日志级别已设置为DEBUG", "CrowServer");
+            } else if (config_.log_level == "info") {
+                crow::logger::setLogLevel(crow::LogLevel::INFO);
+                LOG_DEBUG("Crow日志级别已设置为INFO", "CrowServer");
+            } else if (config_.log_level == "warning") {
+                crow::logger::setLogLevel(crow::LogLevel::WARNING);
+                LOG_DEBUG("Crow日志级别已设置为WARNING", "CrowServer");
+            } else if (config_.log_level == "error") {
+                crow::logger::setLogLevel(crow::LogLevel::ERROR);
+                LOG_DEBUG("Crow日志级别已设置为ERROR", "CrowServer");
+            } else if (config_.log_level == "critical") {
+                crow::logger::setLogLevel(crow::LogLevel::CRITICAL);
+                LOG_DEBUG("Crow日志级别已设置为CRITICAL", "CrowServer");
+            } else {
+                LOG_DEBUG("未知的日志级别: " + config_.log_level + "，使用默认级别", "CrowServer");
+            }
+
+            // 标记为已初始化
+            is_initialized_ = true;
+
+            LOG_DEBUG("Crow服务器初始化成功，监听地址: " + config_.address +
+                     ":" + std::to_string(config_.port), "CrowServer");
+            return true;
+
+        } catch (const std::exception& e) {
+            LOG_ERROR("Crow服务器初始化失败: " + std::string(e.what()), "CrowServer");
+            is_initialized_ = false;
+            return false;
+        }
+    }
+
+    bool start() {
+        if (is_running_) {
+            return true;
+        }
+
+        if (!is_initialized_ || !app_) {
+            LOG_ERROR("Crow服务器未初始化", "CrowServer");
+            return false;
+        }
+
+        try {
+            // 设置路由
+            LOG_INFO("正在设置HTTP路由...", "CrowServer");
+            setupRoutes();
+            LOG_INFO("HTTP路由设置完成", "CrowServer");
+
+            // 设置WebSocket
+            LOG_INFO("正在设置WebSocket路由...", "CrowServer");
+            setupWebSocket();
+            LOG_INFO("WebSocket路由设置完成", "CrowServer");
+
+            // 验证应用配置
+            LOG_INFO("验证Crow应用配置...", "CrowServer");
+            app_->validate();
+            LOG_INFO("Crow应用配置验证完成", "CrowServer");
+
+            // 启动服务器线程
+            is_running_ = true;
+            server_thread_ = std::thread([this]() {
+                LOG_INFO("Crow服务器线程已启动", "CrowServer");
+
+                try {
+                    // 设置监听端口
+                    if (config_.use_https && !config_.ssl_cert_path.empty() && !config_.ssl_key_path.empty()) {
+                        app_->port(config_.port)
+                            .ssl_file(config_.ssl_cert_path, config_.ssl_key_path)
+                            .multithreaded()
+                            .run();
+                    } else {
+                        app_->port(config_.port)
+                            .multithreaded()
+                            .run();
+                    }
+                } catch (const std::exception& e) {
+                    LOG_ERROR("Crow服务器运行失败: " + std::string(e.what()), "CrowServer");
+                    is_running_ = false;
+                }
+
+                LOG_INFO("Crow服务器线程已停止", "CrowServer");
+            });
+
+            LOG_INFO("Crow服务器启动成功，监听端口: " + std::to_string(config_.port), "CrowServer");
+            return true;
+        } catch (const std::exception& e) {
+            LOG_ERROR("启动Crow服务器失败: " + std::string(e.what()), "CrowServer");
+            is_running_ = false;
+            return false;
+        }
+    }
+
+    bool stop() {
+        if (!is_running_) {
+            return true;
+        }
+
+        LOG_DEBUG("正在停止Crow服务器...", "CrowServer");
+
+        try {
+            // 停止Crow应用
+            if (app_) {
+                LOG_DEBUG("正在停止Crow应用...", "CrowServer");
+                app_->stop();
+            }
+
+            // 等待服务器线程结束，设置超时时间
+            if (server_thread_.joinable()) {
+                LOG_DEBUG("等待服务器线程结束...", "CrowServer");
+
+                // 使用detach而不是join，避免无限等待
+                // 在实际应用中，Crow的stop()应该能够正确停止服务器
+                auto start_time = std::chrono::steady_clock::now();
+                auto timeout = std::chrono::seconds(3); // 3秒超时
+
+                // 尝试等待线程结束
+                bool thread_finished = false;
+                while (!thread_finished &&
+                       (std::chrono::steady_clock::now() - start_time) < timeout) {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                    // 检查线程是否还在运行
+                    // 注意：这里我们不能直接检查线程状态，所以使用超时机制
+                }
+
+                if ((std::chrono::steady_clock::now() - start_time) >= timeout) {
+                    LOG_WARNING("服务器线程停止超时，强制分离线程", "CrowServer");
+                    server_thread_.detach();
+                } else {
+                    // 如果在超时时间内，尝试join
+                    try {
+                        server_thread_.join();
+                        LOG_DEBUG("服务器线程已正常结束", "CrowServer");
+                    } catch (const std::exception& e) {
+                        LOG_WARNING("等待服务器线程结束时出错: " + std::string(e.what()), "CrowServer");
+                        server_thread_.detach();
+                    }
+                }
+            }
+
+            is_running_ = false;
+            LOG_INFO("Crow服务器已停止", "CrowServer");
+            return true;
+        } catch (const std::exception& e) {
+            LOG_ERROR("停止Crow服务器失败: " + std::string(e.what()), "CrowServer");
+            is_running_ = false; // 确保标记为已停止
+            return false;
+        }
+    }
+
+    bool isRunning() const {
+        return is_running_;
+    }
+
+    int64_t getRequestCount() const {
+        return request_count_.load();
+    }
+
+    int64_t getErrorCount() const {
+        return error_count_.load();
+    }
+
+    void registerWebSocketHandler(
+        const std::string& path,
+        std::function<void(std::string_view, void*, bool, std::string)> message_handler,
+        std::function<void(std::string)> open_handler,
+        std::function<void(std::string, int, std::string_view)> close_handler) {
+
+        std::lock_guard<std::mutex> lock(ws_handlers_mutex_);
+        ws_handlers_[path] = {
+            message_handler,
+            open_handler,
+            close_handler
+        };
+
+        LOG_DEBUG("注册WebSocket处理器，路径: " + path, "CrowServer");
+    }
+
+    void broadcastWebSocketMessage(const std::string& path, const std::string& message, bool is_binary) {
+        std::lock_guard<std::mutex> lock(ws_connections_mutex_);
+
+        for (auto& [client_id, conn] : ws_connections_) {
+            if (conn.is_connected && conn.ws) {
+                try {
+                    if (is_binary) {
+                        conn.ws->send_binary(message);
+                    } else {
+                        conn.ws->send_text(message);
+                    }
+                    request_count_++;
+                } catch (const std::exception& e) {
+                    LOG_ERROR("广播消息失败: " + std::string(e.what()), "CrowServer");
+                    error_count_++;
+                }
+            }
+        }
+
+        LOG_DEBUG("广播消息到路径: " + path + ", 长度: " + std::to_string(message.size()), "CrowServer");
+    }
+
+    bool sendWebSocketMessage(const std::string& client_id, const std::string& message, bool is_binary) {
+        std::lock_guard<std::mutex> lock(ws_connections_mutex_);
+
+        auto it = ws_connections_.find(client_id);
+        if (it == ws_connections_.end() || !it->second.is_connected || !it->second.ws) {
+            LOG_WARNING("找不到客户端: " + client_id, "CrowServer");
+            return false;
+        }
+
+        try {
+            if (is_binary) {
+                it->second.ws->send_binary(message);
+            } else {
+                it->second.ws->send_text(message);
+            }
+            request_count_++;
+
+            LOG_DEBUG("发送消息到客户端: " + client_id + ", 长度: " + std::to_string(message.size()), "CrowServer");
+            return true;
+        } catch (const std::exception& e) {
+            LOG_ERROR("发送消息失败: " + std::string(e.what()), "CrowServer");
+            error_count_++;
+            return false;
+        }
+    }
+
+    bool disconnectClient(const std::string& client_id) {
+        std::lock_guard<std::mutex> lock(ws_connections_mutex_);
+
+        auto it = ws_connections_.find(client_id);
+        if (it == ws_connections_.end() || !it->second.is_connected || !it->second.ws) {
+            LOG_WARNING("找不到要断开的客户端: " + client_id, "CrowServer");
+            return false;
+        }
+
+        try {
+            it->second.ws->close();
+            it->second.is_connected = false;
+
+            LOG_DEBUG("断开客户端连接: " + client_id, "CrowServer");
+            return true;
+        } catch (const std::exception& e) {
+            LOG_ERROR("断开客户端连接失败: " + std::string(e.what()), "CrowServer");
+            return false;
+        }
+    }
+
+private:
+    // 设置路由
+    void setupRoutes() {
+        if (!app_ || !rest_handler_) {
+            return;
+        }
+
+        try {
+            // 系统信息API
+            CROW_ROUTE((*app_), "/api/system/info")
+            .methods("GET"_method)
+            ([this]() {
+                crow::json::wvalue response;
+                response["status"] = "ok";
+
+                try {
+                    // 获取系统监控器实例
+                    auto& system_monitor = cam_server::system::SystemMonitor::getInstance();
+
+                    // 获取系统信息
+                    auto sys_info = system_monitor.getSystemInfo();
+
+                    // 1. CPU信息
+                    crow::json::wvalue cpu;
+                    cpu["usage_percent"] = sys_info.cpu.usage_percent;
+                    cpu["temperature"] = sys_info.cpu.temperature;
+                    cpu["core_count"] = sys_info.cpu.core_count;
+                    cpu["frequency"] = sys_info.cpu.frequency;
+                    cpu["big_core_frequency"] = sys_info.cpu.big_core_frequency;
+                    cpu["little_core_frequency"] = sys_info.cpu.little_core_frequency;
+
+                    // 添加每个核心的频率信息
+                    crow::json::wvalue core_frequencies = crow::json::wvalue::list();
+                    for (size_t i = 0; i < sys_info.cpu.core_frequencies.size(); ++i) {
+                        core_frequencies[i] = sys_info.cpu.core_frequencies[i];
+                    }
+                    cpu["core_frequencies"] = std::move(core_frequencies);
+
+                    // 添加每个核心的使用率信息
+                    crow::json::wvalue cpu_core_usage = crow::json::wvalue::list();
+                    for (size_t i = 0; i < sys_info.cpu.core_usage.size(); ++i) {
+                        cpu_core_usage[i] = sys_info.cpu.core_usage[i];
+                    }
+                    cpu["core_usage"] = std::move(cpu_core_usage);
+
+                    response["cpu"] = std::move(cpu);
+
+                    // 2. 内存信息
+                    crow::json::wvalue memory;
+                    memory["total"] = sys_info.memory.total;
+                    memory["used"] = sys_info.memory.used;
+                    memory["free"] = sys_info.memory.free;
+                    memory["usage_percent"] = sys_info.memory.usage_percent;
+                    response["memory"] = std::move(memory);
+
+                    // 3. 存储信息
+                    crow::json::wvalue storage = crow::json::wvalue::list();
+                    for (size_t i = 0; i < sys_info.storage.size(); ++i) {
+                        const auto& s = sys_info.storage[i];
+                        crow::json::wvalue item;
+                        item["mount_point"] = s.mount_point;
+                        item["total"] = s.total;
+                        item["used"] = s.used;
+                        item["free"] = s.free;
+                        item["usage_percent"] = s.usage_percent;
+                        storage[i] = std::move(item);
+                    }
+                    response["storage"] = std::move(storage);
+
+                    // 4. 网络信息
+                    crow::json::wvalue network = crow::json::wvalue::list();
+                    for (size_t i = 0; i < sys_info.network.size(); ++i) {
+                        const auto& n = sys_info.network[i];
+                        crow::json::wvalue item;
+                        item["interface"] = n.interface;
+                        item["ip_address"] = n.ip_address;
+                        if (!n.mac_address.empty()) {
+                            item["mac_address"] = n.mac_address;
+                        }
+                        if (!n.netmask.empty()) {
+                            item["netmask"] = n.netmask;
+                        }
+                        if (!n.gateway.empty()) {
+                            item["gateway"] = n.gateway;
+                        }
+                        item["rx_bytes"] = n.rx_bytes;
+                        item["tx_bytes"] = n.tx_bytes;
+                        if (!n.ssid.empty()) {
+                            item["ssid"] = n.ssid;
+                        }
+                        network[i] = std::move(item);
+                    }
+                    response["network"] = std::move(network);
+
+                    // 5. GPU信息
+                    crow::json::wvalue gpu;
+                    gpu["usage_percent"] = sys_info.gpu.usage_percent;
+                    gpu["temperature"] = sys_info.gpu.temperature;
+                    gpu["memory_usage_percent"] = sys_info.gpu.memory_usage_percent;
+                    gpu["frequency"] = sys_info.gpu.frequency;
+                    response["gpu"] = std::move(gpu);
+
+                    // 6. NPU信息
+                    crow::json::wvalue npu;
+                    npu["usage_percent"] = sys_info.npu.usage_percent;
+                    npu["device_name"] = sys_info.npu.device_name;
+
+                    // 添加NPU核心使用率
+                    crow::json::wvalue core_usage = crow::json::wvalue::list();
+                    for (size_t i = 0; i < sys_info.npu.core_usage.size(); ++i) {
+                        core_usage[i] = sys_info.npu.core_usage[i];
+                    }
+                    npu["core_usage"] = std::move(core_usage);
+
+                    // 添加NPU核心温度
+                    crow::json::wvalue core_temperature = crow::json::wvalue::list();
+                    for (size_t i = 0; i < sys_info.npu.core_temperature.size(); ++i) {
+                        core_temperature[i] = sys_info.npu.core_temperature[i];
+                    }
+                    npu["core_temperature"] = std::move(core_temperature);
+
+                    response["npu"] = std::move(npu);
+
+                    // 7. 系统基本信息
+                    response["hostname"] = sys_info.hostname;
+                    response["os_version"] = sys_info.os_version;
+                    response["kernel_version"] = sys_info.kernel_version;
+                    response["uptime"] = sys_info.uptime;
+                    response["system_time"] = sys_info.system_time;
+
+                    // 6. 系统负载
+                    crow::json::wvalue load_avg = crow::json::wvalue::list();
+                    for (size_t i = 0; i < sys_info.load_average.size(); ++i) {
+                        load_avg[i] = sys_info.load_average[i];
+                    }
+                    response["load_average"] = std::move(load_avg);
+
+                    // 7. 服务信息
+                    response["service"] = "cam_server";
+                    response["version"] = "1.0.0";
+
+                } catch (const std::exception& e) {
+                    response["status"] = "error";
+                    response["message"] = std::string("获取系统信息失败: ") + e.what();
+                    return crow::response(500, response);
+                }
+
+                return crow::response(200, response);
+            });
+
+            // 摄像头相关接口已移至 CameraApi 中统一管理
+            // 避免重复定义，确保接口一致性
+
+            // 注册具体的摄像头API路由
+            LOG_DEBUG("注册摄像头状态API: /api/camera/status", "CrowServer");
+            CROW_ROUTE((*app_), "/api/camera/status")
+            .methods("GET"_method)
+            ([this](const crow::request& req) {
+                return handleHttpRequest("GET", "/api/camera/status", req);
+            });
+
+            LOG_DEBUG("注册摄像头列表API: /api/camera/list", "CrowServer");
+            CROW_ROUTE((*app_), "/api/camera/list")
+            .methods("GET"_method)
+            ([this](const crow::request& req) {
+                return handleHttpRequest("GET", "/api/camera/list", req);
+            });
+
+            LOG_DEBUG("注册摄像头打开API: /api/camera/open", "CrowServer");
+            CROW_ROUTE((*app_), "/api/camera/open")
+            .methods("POST"_method)
+            ([this](const crow::request& req) {
+                return handleHttpRequest("POST", "/api/camera/open", req);
+            });
+
+            LOG_DEBUG("注册摄像头关闭API: /api/camera/close", "CrowServer");
+            CROW_ROUTE((*app_), "/api/camera/close")
+            .methods("POST"_method)
+            ([this](const crow::request& req) {
+                return handleHttpRequest("POST", "/api/camera/close", req);
+            });
+
+            // 暂时注释掉通用路由，避免与WebSocket冲突
+            // TODO: 稍后重新实现静态文件服务，使用更具体的路由
+            /*
+            if (!config_.static_files_dir.empty()) {
+            CROW_ROUTE((*app_), "/<path>")
+            ([this](const crow::request& req, const std::string& path) {
+                this->request_count_++;
+
+                std::string file_path = path;
+                if (file_path.empty() || file_path == "/") {
+                    file_path = "index.html";
+                }
+
+                std::string full_path = this->config_.static_files_dir + "/" + file_path;
+
+                // 检查文件是否存在
+                std::ifstream file(full_path, std::ios::binary);
+                if (!file.is_open()) {
+                    this->error_count_++;
+                    return crow::response(404, "File not found");
+                }
+
+                // 读取文件内容
+                std::stringstream buffer;
+                buffer << file.rdbuf();
+
+                // 返回文件内容
+                auto res = crow::response(200, buffer.str());
+
+                // 设置内容类型
+                std::string content_type = "text/plain";
+                std::string ext = full_path.substr(full_path.find_last_of(".") + 1);
+                if (ext == "html") content_type = "text/html";
+                else if (ext == "css") content_type = "text/css";
+                else if (ext == "js") content_type = "application/javascript";
+                else if (ext == "json") content_type = "application/json";
+                else if (ext == "png") content_type = "image/png";
+                else if (ext == "jpg" || ext == "jpeg") content_type = "image/jpeg";
+                else if (ext == "gif") content_type = "image/gif";
+
+                res.add_header("Content-Type", content_type);
+                return res;
+            });
+
+            LOG_DEBUG("已注册静态文件路由: /<path>", "CrowServer");
+            }
+            */
+
+            LOG_DEBUG("静态文件路由已暂时禁用，避免WebSocket冲突", "CrowServer");
+
+            // 处理根路径
+            CROW_ROUTE((*app_), "/")
+            .methods("GET"_method, "POST"_method, "PUT"_method, "DELETE"_method, "PATCH"_method, "OPTIONS"_method)
+            ([this](const crow::request& req) {
+                // 获取请求方法
+                std::string method = std::string(crow::method_name(req.method));
+                LOG_DEBUG("收到请求: " + method + " /", "CrowServer");
+                return handleHttpRequest(method, "/", req);
+            });
+
+            LOG_DEBUG("已注册根路由: /", "CrowServer");
+                is_initialized_ = true;
+                LOG_DEBUG("路由初始化完成", "CrowServer");
+            }
+        } catch (const std::exception& e) {
+            LOG_ERROR("路由初始化失败: " + std::string(e.what()), "CrowServer");
+            throw;
+        }
+    }
+
+    // 设置WebSocket
+    void setupWebSocket() {
+        LOG_INFO("=== 开始设置WebSocket路由 ===", "CrowServer");
+
+        if (!app_) {
+            LOG_ERROR("Crow应用未初始化，无法设置WebSocket", "CrowServer");
+            return;
+        }
+
+        try {
+            // 创建测试WebSocket路由
+            LOG_INFO("正在创建测试WebSocket路由: /ws", "CrowServer");
+
+            // 创建一个静态的用户集合来模仿官方示例
+            static std::mutex ws_mtx;
+            static std::unordered_set<crow::websocket::connection*> ws_users;
+
+            CROW_WEBSOCKET_ROUTE((*app_), "/ws")
+              .onopen([](crow::websocket::connection& conn) {
+                  std::cout << "=== /ws WebSocket连接打开 ===" << std::endl;
+                  std::cout << "远程IP: " << conn.get_remote_ip() << std::endl;
+                  std::lock_guard<std::mutex> _(ws_mtx);
+                  ws_users.insert(&conn);
+                  std::cout << "当前连接数: " << ws_users.size() << std::endl;
+              })
+              .onclose([](crow::websocket::connection& conn, const std::string& reason, uint16_t code) {
+                  std::cout << "=== /ws WebSocket连接关闭 ===" << std::endl;
+                  std::cout << "原因: " << reason << ", 代码: " << code << std::endl;
+                  std::lock_guard<std::mutex> _(ws_mtx);
+                  ws_users.erase(&conn);
+                  std::cout << "当前连接数: " << ws_users.size() << std::endl;
+              })
+              .onmessage([](crow::websocket::connection& conn, const std::string& data, bool is_binary) {
+                  std::cout << "=== /ws 收到WebSocket消息 ===" << std::endl;
+                  std::cout << "数据: " << data << std::endl;
+
+                  // 回显消息
+                  conn.send_text("Echo: " + data);
+
+                  // 广播给所有用户
+                  std::lock_guard<std::mutex> _(ws_mtx);
+                  for (auto u : ws_users) {
+                      if (u != &conn) {  // 不发送给自己
+                          if (is_binary)
+                              u->send_binary(data);
+                          else
+                              u->send_text("Broadcast: " + data);
+                      }
+                  }
+              });
+
+            LOG_INFO("测试WebSocket路由设置完成", "CrowServer");
+
+            // 创建摄像头WebSocket路由 - video0
+            LOG_INFO("正在创建摄像头WebSocket路由: /ws/camera/video0", "CrowServer");
+
+            // 为video0创建静态变量
+            static std::mutex video0_ws_mtx;
+            static std::unordered_set<crow::websocket::connection*> video0_ws_users;
+
+            CROW_WEBSOCKET_ROUTE((*app_), "/ws/camera/video0")
+              .onopen([this](crow::websocket::connection& conn) {
+                  std::cout << "=== video0 WebSocket连接打开 ===" << std::endl;
+                  std::cout << "远程IP: " << conn.get_remote_ip() << std::endl;
+
+                  std::lock_guard<std::mutex> _(video0_ws_mtx);
+                  video0_ws_users.insert(&conn);
+
+                  // 生成客户端ID
+                  std::string client_id = generateClientId();
+
+                  // 存储连接信息
+                  {
+                      std::lock_guard<std::mutex> lock(ws_connections_mutex_);
+                      WebSocketConnection ws_conn;
+                      ws_conn.client_id = client_id;
+                      ws_conn.ws = &conn;
+                      ws_conn.is_connected = true;
+                      ws_conn.last_activity = std::chrono::steady_clock::now();
+                      ws_connections_[client_id] = ws_conn;
+                  }
+
+                  std::cout << "video0 客户端ID: " << client_id << ", 当前连接数: " << video0_ws_users.size() << std::endl;
+              })
+              .onclose([this](crow::websocket::connection& conn, const std::string& reason, uint16_t close_code) {
+                  std::cout << "=== video0 WebSocket连接关闭 ===" << std::endl;
+                  std::cout << "原因: " << reason << ", 代码: " << close_code << std::endl;
+
+                  std::lock_guard<std::mutex> _(video0_ws_mtx);
+                  video0_ws_users.erase(&conn);
+
+                  // 清理连接信息
+                  {
+                      std::lock_guard<std::mutex> lock(ws_connections_mutex_);
+                      for (auto it = ws_connections_.begin(); it != ws_connections_.end(); ++it) {
+                          if (it->second.ws == &conn) {
+                              ws_connections_.erase(it);
+                              break;
+                          }
+                      }
+                  }
+
+                  std::cout << "video0 当前连接数: " << video0_ws_users.size() << std::endl;
+              })
+              .onmessage([this](crow::websocket::connection& conn, const std::string& data, bool is_binary) {
+                  std::cout << "=== video0 收到WebSocket消息 ===" << std::endl;
+                  std::cout << "数据: " << data << std::endl;
+
+                  // 回显消息
+                  conn.send_text("video0 received: " + data);
+              });
+
+            LOG_INFO("video0 WebSocket路由设置完成", "CrowServer");
+
+            // 创建摄像头WebSocket路由 - video2
+            LOG_INFO("正在创建摄像头WebSocket路由: /ws/camera/video2", "CrowServer");
+
+            // 为video2创建静态变量
+            static std::mutex video2_ws_mtx;
+            static std::unordered_set<crow::websocket::connection*> video2_ws_users;
+
+            CROW_WEBSOCKET_ROUTE((*app_), "/ws/camera/video2")
+              .onopen([this](crow::websocket::connection& conn) {
+                  std::cout << "=== video2 WebSocket连接打开 ===" << std::endl;
+                  std::cout << "远程IP: " << conn.get_remote_ip() << std::endl;
+
+                  std::lock_guard<std::mutex> _(video2_ws_mtx);
+                  video2_ws_users.insert(&conn);
+
+                  // 生成客户端ID
+                  std::string client_id = generateClientId();
+
+                  // 存储连接信息
+                  {
+                      std::lock_guard<std::mutex> lock(ws_connections_mutex_);
+                      WebSocketConnection ws_conn;
+                      ws_conn.client_id = client_id;
+                      ws_conn.ws = &conn;
+                      ws_conn.is_connected = true;
+                      ws_conn.last_activity = std::chrono::steady_clock::now();
+                      ws_connections_[client_id] = ws_conn;
+                  }
+
+                  std::cout << "video2 客户端ID: " << client_id << ", 当前连接数: " << video2_ws_users.size() << std::endl;
+              })
+              .onclose([this](crow::websocket::connection& conn, const std::string& reason, uint16_t close_code) {
+                  std::cout << "=== video2 WebSocket连接关闭 ===" << std::endl;
+                  std::cout << "原因: " << reason << ", 代码: " << close_code << std::endl;
+
+                  std::lock_guard<std::mutex> _(video2_ws_mtx);
+                  video2_ws_users.erase(&conn);
+
+                  // 清理连接信息
+                  {
+                      std::lock_guard<std::mutex> lock(ws_connections_mutex_);
+                      for (auto it = ws_connections_.begin(); it != ws_connections_.end(); ++it) {
+                          if (it->second.ws == &conn) {
+                              ws_connections_.erase(it);
+                              break;
+                          }
+                      }
+                  }
+
+                  std::cout << "video2 当前连接数: " << video2_ws_users.size() << std::endl;
+              })
+              .onmessage([this](crow::websocket::connection& conn, const std::string& data, bool /*is_binary*/) {
+                  std::cout << "=== video2 收到WebSocket消息 ===" << std::endl;
+                  std::cout << "数据: " << data << std::endl;
+
+                  // 回显消息
+                  conn.send_text("video2 received: " + data);
+              });
+
+            LOG_INFO("video2 WebSocket路由设置完成", "CrowServer");
+
+        } catch (const std::exception& e) {
+            LOG_ERROR("设置WebSocket路由时发生异常: " + std::string(e.what()), "CrowServer");
+            throw;
+        }
+
+        LOG_INFO("=== WebSocket路由设置完成 ===", "CrowServer");
+    }
+
+    // 处理HTTP请求
+    crow::response handleHttpRequest(const std::string& method, const std::string& path, const crow::request& req) {
+        request_count_++;
+
+        // 转换请求
+        HttpRequest http_req;
+        http_req.method = method;
+        http_req.path = path;
+
+        // 处理查询参数
+        auto keys = req.url_params.keys();
+        for (const auto& key : keys) {
+            char* value = req.url_params.get(key);
+            if (value) {
+                http_req.query_params[key] = value;
+            }
+        }
+
+        // 处理请求体
+        http_req.body = req.body;
+
+        // 处理头部
+        for (const auto& header : req.headers) {
+            http_req.headers[header.first] = header.second;
+        }
+
+        // 调用处理器
+        try {
+            HttpResponse http_res = rest_handler_->handleRequest(http_req);
+
+            // 转换响应
+            crow::response res(http_res.status_code, http_res.body);
+
+            // 设置头部
+            for (const auto& [key, value] : http_res.headers) {
+                res.set_header(key, value);
+            }
+
+            return res;
+        } catch (const std::exception& e) {
+            LOG_ERROR("处理请求时发生错误: " + std::string(e.what()), "CrowServer");
+            error_count_++;
+            return crow::response(500, "Internal Server Error: " + std::string(e.what()));
+        }
+    }
+
+    // 生成唯一的客户端ID
+    std::string generateClientId() {
+        static std::atomic<uint64_t> next_id{1};
+        return "ws-" + std::to_string(next_id++);
+    }
+
+    // Crow应用
+    std::unique_ptr<crow::SimpleApp> app_;
+    // 服务器配置
+    CrowServerConfig config_;
+    // REST处理器
+    std::shared_ptr<RestHandler> rest_handler_;
+    // 服务器线程
+    std::thread server_thread_;
+    // 是否正在运行
+    std::atomic<bool> is_running_;
+    // 是否已初始化
+    bool is_initialized_ = false;
+    // 请求和错误计数
+    std::atomic<int64_t> request_count_;
+    std::atomic<int64_t> error_count_;
+
+    // WebSocket处理器
+    struct WebSocketHandler {
+        std::function<void(std::string_view, void*, bool, std::string)> message_handler;
+        std::function<void(std::string)> open_handler;
+        std::function<void(std::string, int, std::string_view)> close_handler;
+    };
+
+    std::unordered_map<std::string, WebSocketHandler> ws_handlers_;
+    std::mutex ws_handlers_mutex_;
+
+    // WebSocket连接
+    std::unordered_map<std::string, WebSocketConnection> ws_connections_;
+    std::mutex ws_connections_mutex_;
+};
+
+// CrowServer类实现
+
+CrowServer::CrowServer()
+    : is_initialized_(false), is_running_(false), request_count_(0), error_count_(0) {
+    impl_ = std::make_unique<Impl>();
+}
+
+CrowServer::~CrowServer() {
+    stop();
+}
+
+bool CrowServer::initialize(const CrowServerConfig& config, std::shared_ptr<RestHandler> rest_handler) {
+    if (is_initialized_) {
+        LOG_WARNING("Crow服务器已经初始化", "CrowServer");
+        return true;
+    }
+
+    LOG_DEBUG("正在初始化Crow服务器...", "CrowServer");
+
+    config_ = config;
+    rest_handler_ = rest_handler;
+    is_initialized_ = true;
+    is_running_ = false;
+    request_count_ = 0;
+    error_count_ = 0;
+
+    LOG_DEBUG("Crow服务器初始化完成", "CrowServer");
+    return impl_->initialize(config, rest_handler);
+}
+
+bool CrowServer::start() {
+    if (!is_initialized_) {
+        LOG_ERROR("Crow服务器未初始化", "CrowServer");
+        return false;
+    }
+
+    if (is_running_) {
+        LOG_WARNING("Crow服务器已经在运行中", "CrowServer");
+        return true;
+    }
+
+    LOG_DEBUG("正在启动Crow服务器...", "CrowServer");
+
+    is_running_ = true;
+
+    bool result = impl_->start();
+    if (!result) {
+        is_running_ = false;
+        LOG_ERROR("Crow服务器启动失败", "CrowServer");
+        return false;
+    }
+
+    LOG_INFO("Crow服务器启动成功", "CrowServer");
+    return true;
+}
+
+bool CrowServer::stop() {
+    if (!is_running_) {
+        return true;
+    }
+
+    if (!impl_->stop()) {
+        LOG_ERROR("停止Crow服务器实现失败", "CrowServer");
+        return false;
+    }
+
+    is_running_ = false;
+    LOG_INFO("Crow服务器已停止", "CrowServer");
+    return true;
+}
+
+bool CrowServer::isRunning() const {
+    return is_running_;
+}
+
+int64_t CrowServer::getRequestCount() const {
+    return request_count_.load(std::memory_order_relaxed);
+}
+
+int64_t CrowServer::getErrorCount() const {
+    return error_count_.load(std::memory_order_relaxed);
+}
+
+void CrowServer::registerWebSocketHandler(
+    const std::string& path,
+    std::function<void(std::string_view, void*, bool, std::string)> message_handler,
+    std::function<void(std::string)> open_handler,
+    std::function<void(std::string, int, std::string_view)> close_handler
+) {
+    impl_->registerWebSocketHandler(path, message_handler, open_handler, close_handler);
+}
+
+void CrowServer::broadcastWebSocketMessage(const std::string& path, const std::string& message, bool is_binary) {
+    impl_->broadcastWebSocketMessage(path, message, is_binary);
+}
+
+bool CrowServer::sendWebSocketMessage(const std::string& client_id, const std::string& message, bool is_binary) {
+    return impl_ ? impl_->sendWebSocketMessage(client_id, message, is_binary) : false;
+}
+
+bool CrowServer::disconnectClient(const std::string& client_id) {
+    return impl_ ? impl_->disconnectClient(client_id) : false;
+}
+
+} // namespace api
+} // namespace cam_server
