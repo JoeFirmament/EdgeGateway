@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebSocket视频流测试 (修复版)</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .control-panel {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+        button {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background-color 0.3s;
+        }
+        .btn-primary { background-color: #007bff; color: white; }
+        .btn-primary:hover { background-color: #0056b3; }
+        .btn-success { background-color: #28a745; color: white; }
+        .btn-success:hover { background-color: #1e7e34; }
+        .btn-warning { background-color: #ffc107; color: black; }
+        .btn-warning:hover { background-color: #e0a800; }
+        .btn-danger { background-color: #dc3545; color: white; }
+        .btn-danger:hover { background-color: #c82333; }
+        button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+        .status-panel {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+        .status-item {
+            padding: 15px;
+            border-radius: 4px;
+            background-color: #f8f9fa;
+            border-left: 4px solid #007bff;
+        }
+        .status-item h3 {
+            margin: 0 0 10px 0;
+            color: #333;
+        }
+        .status-value {
+            font-size: 18px;
+            font-weight: bold;
+            color: #007bff;
+        }
+        .video-container {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        #videoCanvas {
+            border: 2px solid #ddd;
+            border-radius: 4px;
+            max-width: 100%;
+            background-color: #000;
+        }
+        .log-container {
+            margin-top: 20px;
+        }
+        .log-content {
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            white-space: pre-wrap;
+            background-color: #000;
+            color: #00ff00;
+            padding: 15px;
+            border-radius: 4px;
+            max-height: 300px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+        }
+        .connection-status {
+            padding: 5px 10px;
+            border-radius: 4px;
+            font-weight: bold;
+            display: inline-block;
+            margin-bottom: 10px;
+        }
+        .status-connected { background-color: #d4edda; color: #155724; }
+        .status-disconnected { background-color: #f8d7da; color: #721c24; }
+        .status-connecting { background-color: #fff3cd; color: #856404; }
+        .device-selector {
+            margin-bottom: 15px;
+        }
+        select {
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎥 WebSocket视频流测试 (修复版)</h1>
+
+        <!-- 连接状态 -->
+        <div class="connection-status status-disconnected" id="connectionStatus">
+            未连接
+        </div>
+
+        <!-- 设备选择 -->
+        <div class="device-selector">
+            <label for="deviceSelect">选择摄像头设备:</label>
+            <select id="deviceSelect">
+                <option value="/dev/video0">摄像头0 (/dev/video0)</option>
+                <option value="/dev/video2">摄像头2 (/dev/video2)</option>
+            </select>
+        </div>
+
+        <!-- 控制面板 -->
+        <div class="control-panel">
+            <button id="connectBtn" class="btn-primary">连接WebSocket</button>
+            <button id="disconnectBtn" class="btn-danger" disabled>断开连接</button>
+            <button id="startCameraBtn" class="btn-success" disabled>启动摄像头</button>
+            <button id="stopCameraBtn" class="btn-warning" disabled>停止摄像头</button>
+            <button id="getStatusBtn" class="btn-primary" disabled>获取状态</button>
+            <button id="clearLogBtn" class="btn-warning">清空日志</button>
+        </div>
+
+        <!-- 状态面板 -->
+        <div class="status-panel">
+            <div class="status-item">
+                <h3>📷 摄像头状态</h3>
+                <div class="status-value" id="cameraStatus">未知</div>
+            </div>
+            <div class="status-item">
+                <h3>👥 连接客户端</h3>
+                <div class="status-value" id="clientCount">0</div>
+            </div>
+            <div class="status-item">
+                <h3>📦 接收帧数</h3>
+                <div class="status-value" id="frameCount">0</div>
+            </div>
+            <div class="status-item">
+                <h3>🔗 当前设备</h3>
+                <div class="status-value" id="currentDevice">无</div>
+            </div>
+        </div>
+
+        <!-- 视频显示区域 -->
+        <div class="video-container">
+            <canvas id="videoCanvas" width="640" height="480"></canvas>
+        </div>
+
+        <!-- 日志区域 -->
+        <div class="log-container">
+            <h3>📋 日志信息</h3>
+            <div class="log-content" id="logContent"></div>
+        </div>
+    </div>
+
+    <script>
+        // DOM元素
+        const connectBtn = document.getElementById('connectBtn');
+        const disconnectBtn = document.getElementById('disconnectBtn');
+        const startCameraBtn = document.getElementById('startCameraBtn');
+        const stopCameraBtn = document.getElementById('stopCameraBtn');
+        const getStatusBtn = document.getElementById('getStatusBtn');
+        const clearLogBtn = document.getElementById('clearLogBtn');
+        const deviceSelect = document.getElementById('deviceSelect');
+        const connectionStatus = document.getElementById('connectionStatus');
+        const cameraStatus = document.getElementById('cameraStatus');
+        const clientCount = document.getElementById('clientCount');
+        const frameCount = document.getElementById('frameCount');
+        const currentDevice = document.getElementById('currentDevice');
+        const logContent = document.getElementById('logContent');
+        const videoCanvas = document.getElementById('videoCanvas');
+        const ctx = videoCanvas.getContext('2d');
+
+        // WebSocket连接
+        let ws = null;
+        let receivedFrames = 0;
+
+        // 日志函数
+        function log(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            const logLine = `[${timestamp}] ${type.toUpperCase()}: ${message}\n`;
+            logContent.textContent += logLine;
+            logContent.scrollTop = logContent.scrollHeight;
+            console.log(logLine);
+        }
+
+        // 更新连接状态
+        function updateConnectionStatus(status, className) {
+            connectionStatus.textContent = status;
+            connectionStatus.className = `connection-status ${className}`;
+        }
+
+        // 更新按钮状态
+        function updateButtons(connected) {
+            connectBtn.disabled = connected;
+            disconnectBtn.disabled = !connected;
+            startCameraBtn.disabled = !connected;
+            stopCameraBtn.disabled = !connected;
+            getStatusBtn.disabled = !connected;
+        }
+
+        // 连接WebSocket
+        function connectWebSocket() {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                log('WebSocket已经连接');
+                return;
+            }
+
+            log('正在连接WebSocket视频流服务器...');
+            updateConnectionStatus('连接中...', 'status-connecting');
+
+            // 使用localhost而不是硬编码IP
+            ws = new WebSocket('ws://localhost:8081/ws/video');
+            ws.binaryType = 'arraybuffer';
+
+            ws.onopen = function() {
+                log('✅ WebSocket连接成功');
+                updateConnectionStatus('已连接', 'status-connected');
+                updateButtons(true);
+            };
+
+            ws.onmessage = function(event) {
+                // 详细调试信息
+                console.log('📨 收到WebSocket消息:', {
+                    type: typeof event.data,
+                    constructor: event.data.constructor.name,
+                    size: event.data.byteLength || event.data.length || 'unknown'
+                });
+
+                if (event.data instanceof ArrayBuffer) {
+                    log('📦 收到ArrayBuffer，大小: ' + event.data.byteLength + ' 字节');
+                    handleVideoFrame(event.data);
+                } else if (event.data instanceof Blob) {
+                    log('📦 收到Blob，大小: ' + event.data.size + ' 字节');
+                    // 将Blob转换为ArrayBuffer
+                    event.data.arrayBuffer().then(function(arrayBuffer) {
+                        handleVideoFrame(arrayBuffer);
+                    });
+                } else if (typeof event.data === 'string') {
+                    // 处理文本消息
+                    handleTextMessage(event.data);
+                } else {
+                    log('❓ 未知消息类型: ' + typeof event.data + ', constructor: ' + event.data.constructor.name);
+                }
+            };
+
+            ws.onerror = function(error) {
+                log('❌ WebSocket连接错误: ' + error, 'error');
+                updateConnectionStatus('连接错误', 'status-disconnected');
+                updateButtons(false);
+            };
+
+            ws.onclose = function() {
+                log('🔌 WebSocket连接已关闭');
+                updateConnectionStatus('未连接', 'status-disconnected');
+                updateButtons(false);
+                ws = null;
+            };
+        }
+
+        // 断开WebSocket
+        function disconnectWebSocket() {
+            if (ws) {
+                ws.close();
+                ws = null;
+            }
+        }
+
+        // 处理文本消息
+        function handleTextMessage(data) {
+            try {
+                const message = JSON.parse(data);
+                log('📨 收到消息: ' + data);
+
+                switch (message.type) {
+                    case 'welcome':
+                        log('🎉 ' + message.message);
+                        break;
+                    case 'success':
+                        log('✅ ' + message.message);
+                        break;
+                    case 'error':
+                        log('❌ ' + message.message, 'error');
+                        break;
+                    case 'status':
+                        updateStatus(message);
+                        break;
+                    default:
+                        log('📋 未知消息类型: ' + message.type);
+                }
+            } catch (e) {
+                log('📋 收到非JSON消息: ' + data);
+            }
+        }
+
+        // 处理视频帧
+        function handleVideoFrame(arrayBuffer) {
+            receivedFrames++;
+            frameCount.textContent = receivedFrames;
+
+            try {
+                // 将ArrayBuffer转换为Blob
+                const blob = new Blob([arrayBuffer], { type: 'image/jpeg' });
+                const url = URL.createObjectURL(blob);
+
+                // 创建图像对象
+                const img = new Image();
+                img.onload = function() {
+                    try {
+                        // 在canvas上绘制图像
+                        ctx.clearRect(0, 0, videoCanvas.width, videoCanvas.height);
+                        ctx.drawImage(img, 0, 0, videoCanvas.width, videoCanvas.height);
+                        URL.revokeObjectURL(url);
+
+                        // 调试信息：图像绘制成功
+                        if (receivedFrames <= 3) {
+                            log('✅ 图像绘制成功，尺寸: ' + img.width + 'x' + img.height);
+                        }
+                    } catch (drawError) {
+                        log('❌ Canvas绘制失败: ' + drawError.message, 'error');
+                        URL.revokeObjectURL(url);
+                    }
+                };
+
+                img.onerror = function() {
+                    log('❌ 图像加载失败', 'error');
+                    URL.revokeObjectURL(url);
+                };
+
+                img.src = url;
+
+                // 只在前几帧或每100帧记录一次日志，避免日志过多
+                if (receivedFrames <= 5 || receivedFrames % 100 === 0) {
+                    log('📷 收到视频帧，大小: ' + arrayBuffer.byteLength + ' 字节');
+                }
+
+                // 强制显示前几帧的详细调试信息
+                if (receivedFrames <= 3) {
+                    log('🔍 Canvas尺寸: ' + videoCanvas.width + 'x' + videoCanvas.height);
+                    log('🔍 Context类型: ' + (ctx ? 'OK' : 'NULL'));
+                    log('🔍 ArrayBuffer大小: ' + arrayBuffer.byteLength);
+                    log('🔍 Blob创建中...');
+                }
+
+            } catch (e) {
+                log('❌ 处理视频帧失败: ' + e.message, 'error');
+            }
+        }
+
+        // 更新状态显示
+        function updateStatus(status) {
+            cameraStatus.textContent = status.camera_capturing ? '运行中' :
+                                     (status.camera_open ? '已打开' : '已关闭');
+            clientCount.textContent = status.client_count || 0;
+            currentDevice.textContent = status.device_path || '无';
+        }
+
+        // 发送命令 - 修复后的版本，匹配后端期望的格式
+        function sendCommand(action) {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                const device = deviceSelect.value;
+                let command;
+
+                // 根据后端代码的解析方式构造命令
+                if (action === 'start_camera') {
+                    command = JSON.stringify({
+                        action: "start_camera",
+                        device: device
+                    });
+                } else {
+                    command = JSON.stringify({ action: action });
+                }
+
+                ws.send(command);
+                log('📤 发送命令: ' + command);
+            } else {
+                log('❌ WebSocket未连接', 'error');
+            }
+        }
+
+        // 启动摄像头
+        function startCamera() {
+            sendCommand('start_camera');
+        }
+
+        // 停止摄像头
+        function stopCamera() {
+            sendCommand('stop_camera');
+        }
+
+        // 获取状态
+        function getStatus() {
+            sendCommand('get_status');
+        }
+
+        // 清空日志
+        function clearLog() {
+            logContent.textContent = '';
+            receivedFrames = 0;
+            frameCount.textContent = '0';
+            log('日志已清空');
+        }
+
+        // 事件监听器
+        connectBtn.addEventListener('click', connectWebSocket);
+        disconnectBtn.addEventListener('click', disconnectWebSocket);
+        startCameraBtn.addEventListener('click', startCamera);
+        stopCameraBtn.addEventListener('click', stopCamera);
+        getStatusBtn.addEventListener('click', getStatus);
+        clearLogBtn.addEventListener('click', clearLog);
+
+        // 页面加载完成后的初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            log('WebSocket视频流测试页面已加载 (修复版)');
+            log('点击"连接WebSocket"开始测试');
+            log('确保服务器运行在 localhost:8081');
+        });
+
+        // 页面卸载时清理
+        window.addEventListener('beforeunload', function() {
+            if (ws) {
+                ws.close();
+            }
+        });
+    </script>
+</body>
+</html>
