@@ -27,19 +27,7 @@ find_package(fmt REQUIRED)
 pkg_check_modules(ROCKCHIP_MPP QUIET rockchip_mpp)
 pkg_check_modules(LIBRGA QUIET librga)
 
-# Mongoose库（嵌入式Web服务器）
-set(MONGOOSE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party/mongoose)
-if(NOT EXISTS ${MONGOOSE_DIR})
-    file(MAKE_DIRECTORY ${MONGOOSE_DIR})
-    file(DOWNLOAD
-        "https://raw.githubusercontent.com/cesanta/mongoose/master/mongoose.c"
-        "${MONGOOSE_DIR}/mongoose.c"
-    )
-    file(DOWNLOAD
-        "https://raw.githubusercontent.com/cesanta/mongoose/master/mongoose.h"
-        "${MONGOOSE_DIR}/mongoose.h"
-    )
-endif()
+# 已移除 Mongoose 库，迁移至 Crow 框架
 
 # 添加子模块
 add_subdirectory(src/api)
@@ -86,7 +74,6 @@ target_include_directories(cam_server PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${FFMPEG_INCLUDE_DIRS}
     ${V4L2_INCLUDE_DIRS}
-    ${MONGOOSE_DIR}
 )
 
 # 旧版GCC文件系统库支持

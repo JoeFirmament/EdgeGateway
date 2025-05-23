@@ -14,7 +14,7 @@ namespace api {
 
 // 前向声明
 class RestHandler;
-class WebServer;
+class CrowServer;
 
 /**
  * @brief API服务器配置结构体
@@ -164,7 +164,7 @@ private:
     // REST处理器
     std::shared_ptr<RestHandler> rest_handler_;
     // Web服务器
-    std::unique_ptr<WebServer> web_server_;
+    std::unique_ptr<CrowServer> web_server_;
     // 服务器线程
     std::thread server_thread_;
     // 停止标志

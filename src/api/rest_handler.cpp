@@ -9,10 +9,10 @@ namespace api {
 
 // 构造函数
 RestHandler::RestHandler(bool enable_cors, const std::string& cors_allowed_origins)
-    : enable_cors_(enable_cors)
-    , cors_allowed_origins_(cors_allowed_origins)
-    , enable_api_key_(false)
-    , api_key_("") {
+    : enable_api_key_(false)
+    , api_key_("")
+    , enable_cors_(enable_cors)
+    , cors_allowed_origins_(cors_allowed_origins) {
 }
 
 // 析构函数

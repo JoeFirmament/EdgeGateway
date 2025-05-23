@@ -1,7 +1,7 @@
-#include "api/mjpeg_streamer.h"
-#include "camera/camera_manager.h"
-#include "monitor/logger.h"
-#include "utils/time_utils.h"
+#include "../../include/api/mjpeg_streamer.h"
+#include "../../include/camera/camera_manager.h"
+#include "../../include/monitor/logger.h"
+#include "../../include/utils/time_utils.h"
 
 #include <chrono>
 #include <algorithm>
@@ -28,11 +28,11 @@ MjpegStreamer& MjpegStreamer::getInstance() {
 MjpegStreamer::MjpegStreamer()
     : is_initialized_(false),
       is_running_(false),
-      current_fps_(0.0),
-      frame_count_(0),
       clients_(),
       camera_clients_(),
       clients_mutex_(),
+      current_fps_(0.0),
+      frame_count_(0),
       last_fps_time_() {
     LOG_DEBUG("创建 MjpegStreamer 实例", "MjpegStreamer");
 }
@@ -511,7 +511,8 @@ bool MjpegStreamer::encodeToJpeg(const camera::Frame& frame, std::vector<uint8_t
                 // 设置编码参数
                 codec_ctx->width = frame.getWidth();
                 codec_ctx->height = frame.getHeight();
-                codec_ctx->time_base = (AVRational){1, 25};
+                AVRational time_base = {1, 25};
+                codec_ctx->time_base = time_base;
                 codec_ctx->pix_fmt = AV_PIX_FMT_YUVJ422P;
                 codec_ctx->flags |= AV_CODEC_FLAG_QSCALE;
                 codec_ctx->global_quality = FF_QP2LAMBDA * config_.jpeg_quality;

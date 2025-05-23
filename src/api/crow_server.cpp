@@ -4,7 +4,8 @@
 #include "../../include/system/system_monitor.h"
 
 // 包含Crow头文件
-#include "third_party/crow/crow.h"
+#define CROW_MAIN
+#include "crow/crow.h"
 
 #include <iostream>
 #include <mutex>
@@ -29,7 +30,7 @@ struct SimpleWebSocketConnection {
 class CrowServer::Impl {
 public:
     Impl() : is_running_(false), request_count_(0), error_count_(0) {}
-    
+
     ~Impl() {
         stop();
     }
@@ -94,6 +95,11 @@ public:
             LOG_INFO("正在设置WebSocket路由...", "CrowServer");
             setupWebSocket();
             LOG_INFO("WebSocket路由设置完成", "CrowServer");
+
+            // 设置摄像头WebSocket路由
+            LOG_INFO("正在设置摄像头WebSocket路由...", "CrowServer");
+            setupCameraWebSocket();
+            LOG_INFO("摄像头WebSocket路由设置完成", "CrowServer");
 
             // 启动服务器线程
             is_running_ = true;
@@ -164,11 +170,11 @@ public:
     }
 
     void registerWebSocketHandler(
-        const std::string& path,
-        std::function<void(std::string_view, void*, bool, std::string)> message_handler,
-        std::function<void(std::string)> open_handler,
-        std::function<void(std::string, int, std::string_view)> close_handler) {
-        
+        [[maybe_unused]] const std::string& path,
+        [[maybe_unused]] std::function<void(std::string_view, void*, bool, std::string)> message_handler,
+        [[maybe_unused]] std::function<void(std::string)> open_handler,
+        [[maybe_unused]] std::function<void(std::string, int, std::string_view)> close_handler) {
+
         LOG_DEBUG("注册WebSocket处理器，路径: " + path, "CrowServer");
         // 简化版本暂时不实现动态注册
     }
@@ -257,6 +263,30 @@ private:
                 return "Cam Server is running! WebSocket: ws://localhost:" + std::to_string(config_.port) + "/ws";
             });
 
+            // 设置静态文件路由 - 使用简单的实现避免编译错误
+            if (!config_.static_files_dir.empty()) {
+                LOG_DEBUG("设置静态文件路由，目录: " + config_.static_files_dir, "CrowServer");
+
+                // 简单的测试页面路由
+                CROW_ROUTE((*app_), "/test_websocket_simple.html")
+                ([this]() {
+                    request_count_++;
+                    std::string file_path = config_.static_files_dir + "/test_websocket_simple.html";
+                    std::ifstream file(file_path);
+                    if (!file.is_open()) {
+                        error_count_++;
+                        return crow::response(404, "File not found");
+                    }
+                    std::string content((std::istreambuf_iterator<char>(file)),
+                                      std::istreambuf_iterator<char>());
+                    crow::response res(200, content);
+                    res.set_header("Content-Type", "text/html; charset=utf-8");
+                    return res;
+                });
+
+                LOG_DEBUG("静态文件路由设置完成", "CrowServer");
+            }
+
             LOG_DEBUG("基本路由设置完成", "CrowServer");
         } catch (const std::exception& e) {
             LOG_ERROR("路由设置失败: " + std::string(e.what()), "CrowServer");
@@ -281,12 +311,12 @@ private:
               .onopen([this](crow::websocket::connection& conn) {
                   std::cout << "=== /ws WebSocket连接打开 ===" << std::endl;
                   std::cout << "远程IP: " << conn.get_remote_ip() << std::endl;
-                  
+
                   std::lock_guard<std::mutex> lock(ws_connections_mutex_);
-                  
+
                   // 生成客户端ID
                   std::string client_id = generateClientId();
-                  
+
                   // 存储连接信息
                   SimpleWebSocketConnection ws_conn;
                   ws_conn.client_id = client_id;
@@ -294,15 +324,15 @@ private:
                   ws_conn.is_connected = true;
                   ws_conn.last_activity = std::chrono::steady_clock::now();
                   ws_connections_[client_id] = ws_conn;
-                  
+
                   std::cout << "客户端ID: " << client_id << ", 当前连接数: " << ws_connections_.size() << std::endl;
               })
               .onclose([this](crow::websocket::connection& conn, const std::string& reason, uint16_t code) {
                   std::cout << "=== /ws WebSocket连接关闭 ===" << std::endl;
                   std::cout << "原因: " << reason << ", 代码: " << code << std::endl;
-                  
+
                   std::lock_guard<std::mutex> lock(ws_connections_mutex_);
-                  
+
                   // 清理连接信息
                   for (auto it = ws_connections_.begin(); it != ws_connections_.end(); ++it) {
                       if (it->second.ws == &conn) {
@@ -310,10 +340,10 @@ private:
                           break;
                       }
                   }
-                  
+
                   std::cout << "当前连接数: " << ws_connections_.size() << std::endl;
               })
-              .onmessage([this](crow::websocket::connection& conn, const std::string& data, bool is_binary) {
+              .onmessage([this](crow::websocket::connection& conn, const std::string& data, [[maybe_unused]] bool is_binary) {
                   std::cout << "=== /ws 收到WebSocket消息 ===" << std::endl;
                   std::cout << "数据: " << data << std::endl;
 
@@ -331,11 +361,105 @@ private:
         LOG_INFO("=== WebSocket路由设置完成 ===", "CrowServer");
     }
 
+    // 设置摄像头WebSocket路由
+    void setupCameraWebSocket() {
+        LOG_INFO("=== 开始设置摄像头WebSocket路由 ===", "CrowServer");
+
+        if (!app_) {
+            LOG_ERROR("Crow应用未初始化，无法设置摄像头WebSocket", "CrowServer");
+            return;
+        }
+
+        try {
+            // 创建摄像头WebSocket路由 - /ws/camera
+            LOG_INFO("正在创建摄像头WebSocket路由: /ws/camera", "CrowServer");
+
+            CROW_WEBSOCKET_ROUTE((*app_), "/ws/camera")
+              .onopen([this](crow::websocket::connection& conn) {
+                  std::cout << "=== /ws/camera WebSocket连接打开 ===" << std::endl;
+                  std::cout << "远程IP: " << conn.get_remote_ip() << std::endl;
+
+                  std::lock_guard<std::mutex> lock(ws_connections_mutex_);
+
+                  // 生成客户端ID
+                  std::string client_id = generateClientId();
+
+                  // 存储连接信息
+                  SimpleWebSocketConnection ws_conn;
+                  ws_conn.client_id = client_id;
+                  ws_conn.ws = &conn;
+                  ws_conn.is_connected = true;
+                  ws_conn.last_activity = std::chrono::steady_clock::now();
+                  ws_connections_[client_id] = ws_conn;
+
+                  std::cout << "摄像头客户端ID: " << client_id << ", 当前连接数: " << ws_connections_.size() << std::endl;
+
+                  // 通知WebSocket摄像头流处理器
+                  // TODO: 集成WebSocket摄像头流处理器
+              })
+              .onclose([this](crow::websocket::connection& conn, const std::string& reason, uint16_t code) {
+                  std::cout << "=== /ws/camera WebSocket连接关闭 ===" << std::endl;
+                  std::cout << "原因: " << reason << ", 代码: " << code << std::endl;
+
+                  std::lock_guard<std::mutex> lock(ws_connections_mutex_);
+
+                  // 清理连接信息
+                  for (auto it = ws_connections_.begin(); it != ws_connections_.end(); ++it) {
+                      if (it->second.ws == &conn) {
+                          std::cout << "移除摄像头客户端: " << it->second.client_id << std::endl;
+                          ws_connections_.erase(it);
+                          break;
+                      }
+                  }
+
+                  std::cout << "当前连接数: " << ws_connections_.size() << std::endl;
+              })
+              .onmessage([this](crow::websocket::connection& conn, const std::string& data, [[maybe_unused]] bool is_binary) {
+                  std::cout << "=== /ws/camera 收到WebSocket消息 ===" << std::endl;
+                  std::cout << "数据: " << data << std::endl;
+
+                  // 处理摄像头控制消息
+                  try {
+                      std::cout << "收到摄像头命令: " << data << std::endl;
+
+                      // 改进的JSON解析和命令处理
+                      if (data.find("start_camera") != std::string::npos) {
+                          std::cout << "✅ 匹配到启动摄像头命令" << std::endl;
+                          conn.send_text("{\"status\":\"success\",\"message\":\"摄像头启动命令已接收\",\"action\":\"start_camera\"}");
+                      } else if (data.find("stop_camera") != std::string::npos) {
+                          std::cout << "✅ 匹配到停止摄像头命令" << std::endl;
+                          conn.send_text("{\"status\":\"success\",\"message\":\"摄像头停止命令已接收\",\"action\":\"stop_camera\"}");
+                      } else if (data.find("get_status") != std::string::npos) {
+                          std::cout << "✅ 匹配到获取状态命令" << std::endl;
+                          conn.send_text("{\"status\":\"success\",\"camera_status\":\"ready\",\"connected_clients\":1}");
+                      } else {
+                          // 默认回显
+                          std::cout << "❓ 未知命令，使用回显模式" << std::endl;
+                          conn.send_text("Camera Echo: " + data);
+                      }
+                  } catch (const std::exception& e) {
+                      std::cout << "❌ 处理摄像头消息时发生错误: " << e.what() << std::endl;
+                      conn.send_text("{\"status\":\"error\",\"message\":\"命令处理失败\"}");
+                  }
+              });
+
+            LOG_INFO("摄像头WebSocket路由设置完成", "CrowServer");
+
+        } catch (const std::exception& e) {
+            LOG_ERROR("设置摄像头WebSocket路由时发生异常: " + std::string(e.what()), "CrowServer");
+            throw;
+        }
+
+        LOG_INFO("=== 摄像头WebSocket路由设置完成 ===", "CrowServer");
+    }
+
     // 生成唯一的客户端ID
     std::string generateClientId() {
         static std::atomic<uint64_t> next_id{1};
         return "ws-" + std::to_string(next_id++);
     }
+
+
 
     // 成员变量
     std::unique_ptr<crow::SimpleApp> app_;

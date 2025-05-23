@@ -1,6 +1,6 @@
 #include "api/api_server.h"
 #include "api/rest_handler.h"
-#include "api/web_server.h"
+#include "api/crow_server.h"
 #include "api/mjpeg_streamer.h"
 #include "api/camera_api.h"
 #include "monitor/logger.h"
@@ -56,10 +56,10 @@ bool ApiServer::initialize(const ApiServerConfig& config) {
     // 保存配置
     config_ = config;
 
-    // 创建Web服务器
-    web_server_ = std::make_unique<WebServer>();
+    // 创建Crow服务器
+    web_server_ = std::make_unique<CrowServer>();
     if (!web_server_) {
-        LOG_ERROR("创建Web服务器失败", "ApiServer");
+        LOG_ERROR("创建Crow服务器失败", "ApiServer");
         return false;
     }
 
@@ -85,8 +85,8 @@ bool ApiServer::initialize(const ApiServerConfig& config) {
     // 注册API路由
     registerApiRoutes();
 
-    // 初始化Web服务器
-    WebServerConfig web_config;
+    // 初始化Crow服务器
+    CrowServerConfig web_config;
     web_config.address = config_.address;
     web_config.port = config_.port;
     web_config.static_files_dir = config_.static_files_dir;

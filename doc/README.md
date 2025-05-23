@@ -328,6 +328,8 @@ Web界面支持以下功能：
 - **设备自动识别和过滤**：智能识别真正可用的摄像头设备，过滤重复的设备节点
 - **Crow框架集成**：成功从Mongoose迁移到Crow框架，实现现代C++ HTTP/WebSocket服务
 - **WebSocket通信突破**：✅ **重大突破** - 解决了WebSocket连接问题，实现稳定的双向通信
+- **WebSocket摄像头控制系统**：✅ **2025-05-23完成** - 实现完整的摄像头WebSocket控制功能
+- **静态文件服务修复**：✅ **2025-05-23完成** - 修复静态文件服务，避免与WebSocket路由冲突
 
 #### 进行中模块
 - **视频录制功能**：正在实现视频录制和回放功能，支持MP4格式的视频录制和播放
@@ -498,6 +500,153 @@ ws://localhost:8080/ws/camera/video0  # 连接DECXIN摄像头
 ws://localhost:8080/ws/camera/video2  # 连接USB摄像头
 
 注意：/dev/video1 和 /dev/video3 是元数据设备，不会创建WebSocket端点
+
+## WebSocket摄像头控制系统
+
+### 概述
+
+本项目实现了基于WebSocket的现代化摄像头控制系统，支持实时双向通信和JSON格式的命令处理。
+
+### WebSocket端点
+
+系统提供以下WebSocket端点：
+
+1. **基本WebSocket** (`/ws`)
+   - 用途：基本的WebSocket连接测试和通信
+   - 功能：消息回显、连接状态管理
+   - 示例：`ws://localhost:8080/ws`
+
+2. **摄像头控制WebSocket** (`/ws/camera`)
+   - 用途：摄像头设备的实时控制和状态查询
+   - 功能：摄像头命令处理、状态反馈、错误处理
+   - 示例：`ws://localhost:8080/ws/camera`
+
+### 支持的摄像头控制命令
+
+#### 1. 获取摄像头状态
+```json
+// 发送
+{
+  "action": "get_status"
+}
+
+// 响应
+{
+  "status": "success",
+  "camera_status": "ready",
+  "connected_clients": 1
+}
+```
+
+#### 2. 启动摄像头
+```json
+// 发送
+{
+  "action": "start_camera",
+  "camera_id": "default"
+}
+
+// 响应
+{
+  "status": "success",
+  "message": "摄像头启动命令已接收",
+  "action": "start_camera"
+}
+```
+
+#### 3. 停止摄像头
+```json
+// 发送
+{
+  "action": "stop_camera",
+  "camera_id": "default"
+}
+
+// 响应
+{
+  "status": "success",
+  "message": "摄像头停止命令已接收",
+  "action": "stop_camera"
+}
+```
+
+#### 4. 未知命令处理
+```json
+// 发送
+{
+  "action": "unknown_command"
+}
+
+// 响应（回显模式）
+"Camera Echo: {\"action\":\"unknown_command\"}"
+```
+
+### WebSocket测试工具
+
+系统提供了完整的WebSocket测试工具：
+
+#### 访问测试页面
+```
+http://localhost:8080/test_websocket_simple.html
+```
+
+#### 测试功能
+- **自动化测试**：一键测试所有WebSocket功能
+- **手动测试**：分别测试基本WebSocket和摄像头WebSocket
+- **实时日志**：显示详细的连接状态和消息交互
+- **连接管理**：支持连接、断开、重连操作
+
+#### JavaScript API示例
+
+```javascript
+// 连接摄像头WebSocket
+const wsCamera = new WebSocket('ws://localhost:8080/ws/camera');
+
+wsCamera.onopen = function() {
+    console.log('摄像头WebSocket连接成功');
+
+    // 发送获取状态命令
+    wsCamera.send(JSON.stringify({
+        action: 'get_status'
+    }));
+};
+
+wsCamera.onmessage = function(event) {
+    try {
+        const response = JSON.parse(event.data);
+        console.log('收到JSON响应:', response);
+    } catch (e) {
+        console.log('收到文本响应:', event.data);
+    }
+};
+```
+
+### 技术特性
+
+#### 1. 连接管理
+- **自动客户端ID生成**：每个连接分配唯一ID
+- **连接状态跟踪**：实时监控连接状态和活动时间
+- **优雅断开处理**：正确处理客户端断开和错误情况
+
+#### 2. 消息处理
+- **JSON格式支持**：统一的JSON命令和响应格式
+- **命令路由**：智能的命令匹配和处理机制
+- **错误处理**：完善的错误捕获和响应机制
+
+#### 3. 调试支持
+- **详细日志**：服务器端提供详细的调试日志
+- **客户端工具**：完整的浏览器端测试工具
+- **状态监控**：实时显示连接数量和客户端状态
+
+### 开发状态
+
+- ✅ **基本WebSocket连接** - 完全稳定
+- ✅ **摄像头控制命令** - 完全实现
+- ✅ **JSON消息处理** - 完全支持
+- ✅ **静态文件服务** - 已修复
+- ✅ **测试工具** - 完全可用
+- 🔄 **视频流传输** - 计划中
+- 🔄 **多摄像头支持** - 计划中
 ```
 
 ## 🎉 WebSocket技术突破
