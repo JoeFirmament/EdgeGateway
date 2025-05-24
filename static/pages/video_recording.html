@@ -1,0 +1,574 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🎬 视频录制 - 深视边缘视觉平台</title>
+    <link rel="stylesheet" href="/static/css/unified-style.css">
+    <style>
+        /* 页面特定样式 - 录制相关 */
+        .recording-indicator {
+            position: absolute;
+            top: 15px;
+            left: 15px;
+            background: #ff4444;
+            color: white;
+            padding: 8px 15px;
+            border-radius: 20px;
+            font-weight: bold;
+            display: none;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .status-panel {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 8px;
+            margin: 16px 0;
+        }
+
+        .status-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 0;
+        }
+
+        .status-label {
+            font-weight: 500;
+            color: rgba(127, 140, 141, 0.8);
+        }
+
+        .status-value {
+            font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+            font-weight: 600;
+            color: rgba(44, 62, 80, 0.9);
+        }
+
+        .video-list {
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <!-- 顶部导航 -->
+        <div id="navigation-container"></div>
+
+        <!-- 页面标题 -->
+        <header class="page-header">
+            <h1 class="page-title">Video Recording</h1>
+            <p class="page-subtitle">DeepVision Edge Platform - Professional camera recording with real-time preview</p>
+        </header>
+
+        <!-- 主要内容区域 -->
+        <div class="grid grid-2">
+            <!-- 左侧：视频预览和摄像头控制 -->
+            <div class="card fade-in">
+                <div class="card-header">
+                    <h3 class="card-title">📹 摄像头预览</h3>
+                </div>
+
+                <!-- 视频预览 -->
+                <div class="video-container" style="background: #000; border-radius: 8px; overflow: hidden; position: relative; margin-bottom: 20px;">
+                    <canvas id="videoCanvas" width="640" height="480" style="width: 100%; height: auto; display: block;"></canvas>
+                    <div id="recordingIndicator" class="recording-indicator">
+                        🔴 录制中
+                    </div>
+                </div>
+
+                <!-- 摄像头控制 -->
+                <div class="form-group">
+                    <label class="form-label">摄像头设备:</label>
+                    <select class="form-select" id="deviceSelect">
+                        <option value="/dev/video0">摄像头 0 (/dev/video0)</option>
+                        <option value="/dev/video2">摄像头 1 (/dev/video2)</option>
+                    </select>
+                </div>
+
+                <div class="control-row">
+                    <button id="connectBtn" class="btn btn-primary">连接</button>
+                    <button id="disconnectBtn" class="btn btn-danger" disabled>断开</button>
+                    <button id="startCameraBtn" class="btn btn-success" disabled>启动摄像头</button>
+                    <button id="stopCameraBtn" class="btn btn-warning" disabled>停止摄像头</button>
+                </div>
+            </div>
+
+            <!-- 右侧：录制控制面板 -->
+            <div class="card fade-in">
+                <div class="card-header">
+                    <h3 class="card-title">🎬 录制控制</h3>
+                </div>
+
+                <!-- 录制参数设置 -->
+                <div class="form-group">
+                    <label class="form-label">录制分辨率:</label>
+                    <select class="form-select" id="recordingResolution">
+                        <option value="640x480" selected>640x480 (VGA)</option>
+                        <option value="800x600">800x600 (SVGA)</option>
+                        <option value="1024x768">1024x768 (XGA)</option>
+                        <option value="1280x720">1280x720 (HD)</option>
+                        <option value="1280x960">1280x960 (SXGA)</option>
+                        <option value="1920x1080">1920x1080 (Full HD)</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">录制帧率:</label>
+                    <select class="form-select" id="recordingFps">
+                        <option value="15">15 FPS</option>
+                        <option value="24">24 FPS</option>
+                        <option value="30" selected>30 FPS</option>
+                        <option value="60">60 FPS</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">文件名 (可选):</label>
+                    <input type="text" class="form-input" id="recordingFilename" placeholder="留空自动生成">
+                </div>
+
+                <!-- 录制控制按钮 -->
+                <div class="control-row">
+                    <button id="startRecordingBtn" class="btn btn-success" disabled>🎬 开始录制</button>
+                    <button id="stopRecordingBtn" class="btn btn-danger" disabled>🛑 停止录制</button>
+                </div>
+
+                <div class="control-row">
+                    <button id="getRecordingStatusBtn" class="btn btn-primary" disabled>📊 录制状态</button>
+                    <button id="getStatusBtn" class="btn btn-secondary" disabled>📋 设备状态</button>
+                </div>
+
+                <!-- 录制状态显示 -->
+                <div style="margin-top: 24px;">
+                    <h4 style="margin-bottom: 12px; color: rgba(44, 62, 80, 0.9);">📊 录制状态</h4>
+                    <div class="status-panel">
+                        <div class="status-item">
+                            <span class="status-label">状态:</span>
+                            <span id="statusRecording" class="status-value">未录制</span>
+                        </div>
+                        <div class="status-item">
+                            <span class="status-label">时长:</span>
+                            <span id="statusDuration" class="status-value">00:00:00</span>
+                        </div>
+                        <div class="status-item">
+                            <span class="status-label">帧数:</span>
+                            <span id="statusFrameCount" class="status-value">0</span>
+                        </div>
+                        <div class="status-item">
+                            <span class="status-label">文件大小:</span>
+                            <span id="statusFileSize" class="status-value">0 MB</span>
+                        </div>
+                        <div class="status-item">
+                            <span class="status-label">当前文件:</span>
+                            <span id="statusFilename" class="status-value">-</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 录制历史 -->
+        <div class="card fade-in" style="margin-top: 32px;">
+            <div class="card-header">
+                <h3 class="card-title">🎞️ 录制历史</h3>
+                <button id="refreshVideoListBtn" class="btn btn-primary">🔄 刷新列表</button>
+            </div>
+            <div id="videoList" class="video-list">
+                <p style="text-align: center; color: rgba(127, 140, 141, 0.7); padding: 20px;">点击"刷新列表"加载录制历史</p>
+            </div>
+        </div>
+
+        <!-- 日志区域 -->
+        <div class="card fade-in" style="margin-top: 32px;">
+            <div class="card-header">
+                <h3 class="card-title">📋 系统日志</h3>
+                <button id="clearLogBtn" class="btn btn-warning">清空日志</button>
+            </div>
+            <div class="log-content" id="logContent"></div>
+        </div>
+    </div>
+
+    <script src="/static/js/navigation.js"></script>
+    <script>
+        // DOM元素
+        const connectBtn = document.getElementById('connectBtn');
+        const disconnectBtn = document.getElementById('disconnectBtn');
+        const startCameraBtn = document.getElementById('startCameraBtn');
+        const stopCameraBtn = document.getElementById('stopCameraBtn');
+        const getStatusBtn = document.getElementById('getStatusBtn');
+        const startRecordingBtn = document.getElementById('startRecordingBtn');
+        const stopRecordingBtn = document.getElementById('stopRecordingBtn');
+        const getRecordingStatusBtn = document.getElementById('getRecordingStatusBtn');
+        const refreshVideoListBtn = document.getElementById('refreshVideoListBtn');
+        const clearLogBtn = document.getElementById('clearLogBtn');
+
+        const deviceSelect = document.getElementById('deviceSelect');
+        const recordingResolution = document.getElementById('recordingResolution');
+        const recordingFps = document.getElementById('recordingFps');
+        const recordingFilename = document.getElementById('recordingFilename');
+
+        const recordingIndicator = document.getElementById('recordingIndicator');
+        const statusRecording = document.getElementById('statusRecording');
+        const statusDuration = document.getElementById('statusDuration');
+        const statusFrameCount = document.getElementById('statusFrameCount');
+        const statusFileSize = document.getElementById('statusFileSize');
+        const statusFilename = document.getElementById('statusFilename');
+        const videoList = document.getElementById('videoList');
+        const logContent = document.getElementById('logContent');
+        const videoCanvas = document.getElementById('videoCanvas');
+        const ctx = videoCanvas.getContext('2d');
+
+        // WebSocket连接
+        let ws = null;
+        let receivedFrames = 0;
+        let isRecording = false;
+        let recordingStartTime = null;
+        let statusUpdateInterval = null;
+
+        // 日志函数
+        function log(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            const logEntry = `[${timestamp}] ${type.toUpperCase()}: ${message}\n`;
+            logContent.textContent += logEntry;
+            logContent.scrollTop = logContent.scrollHeight;
+
+            // 控制台也输出
+            console.log(`[${timestamp}] ${type.toUpperCase()}: ${message}`);
+        }
+
+        // 更新按钮状态
+        function updateButtons(connected) {
+            connectBtn.disabled = connected;
+            disconnectBtn.disabled = !connected;
+            startCameraBtn.disabled = !connected;
+            stopCameraBtn.disabled = !connected;
+            getStatusBtn.disabled = !connected;
+            startRecordingBtn.disabled = !connected || isRecording;
+            stopRecordingBtn.disabled = !connected || !isRecording;
+            getRecordingStatusBtn.disabled = !connected;
+        }
+
+        // 更新录制状态显示
+        function updateRecordingStatus(recording, duration = 0, frameCount = 0, fileSize = 0, filename = '') {
+            isRecording = recording;
+
+            statusRecording.textContent = recording ? '录制中' : '未录制';
+            statusRecording.style.color = recording ? '#dc3545' : '#6c757d';
+
+            // 显示/隐藏录制指示器
+            recordingIndicator.style.display = recording ? 'block' : 'none';
+
+            // 格式化时长
+            const hours = Math.floor(duration / 3600);
+            const minutes = Math.floor((duration % 3600) / 60);
+            const seconds = duration % 60;
+            statusDuration.textContent = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+
+            statusFrameCount.textContent = frameCount.toString();
+            statusFileSize.textContent = (fileSize / (1024 * 1024)).toFixed(2) + ' MB';
+            statusFilename.textContent = filename || '-';
+
+            updateButtons(ws && ws.readyState === WebSocket.OPEN);
+        }
+
+        // WebSocket连接
+        function connectWebSocket() {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                log('WebSocket已经连接', 'warning');
+                return;
+            }
+
+            log('正在连接WebSocket视频流服务器...');
+            ws = new WebSocket('ws://localhost:8081/ws/video');
+
+            ws.onopen = function() {
+                log('✅ WebSocket连接成功');
+                updateButtons(true);
+            };
+
+            ws.onclose = function() {
+                log('❌ WebSocket连接已关闭');
+                updateButtons(false);
+                updateRecordingStatus(false);
+                if (statusUpdateInterval) {
+                    clearInterval(statusUpdateInterval);
+                    statusUpdateInterval = null;
+                }
+            };
+
+            ws.onerror = function(error) {
+                log('❌ WebSocket连接错误: ' + error, 'error');
+                updateButtons(false);
+            };
+
+            ws.onmessage = function(event) {
+                if (event.data instanceof ArrayBuffer) {
+                    handleVideoFrame(event.data);
+                } else if (typeof event.data === 'string') {
+                    handleTextMessage(event.data);
+                }
+            };
+        }
+
+        // 断开WebSocket
+        function disconnectWebSocket() {
+            if (ws) {
+                ws.close();
+                ws = null;
+            }
+            updateButtons(false);
+            updateRecordingStatus(false);
+        }
+
+        // 处理文本消息
+        function handleTextMessage(data) {
+            try {
+                const message = JSON.parse(data);
+                log('📨 收到消息: ' + JSON.stringify(message));
+
+                switch (message.type) {
+                    case 'welcome':
+                        log('🎉 ' + message.message);
+                        break;
+                    case 'success':
+                        log('✅ ' + message.message);
+                        break;
+                    case 'error':
+                        log('❌ ' + message.message, 'error');
+                        break;
+                    case 'recording_started':
+                        handleRecordingStarted(message);
+                        break;
+                    case 'recording_stopped':
+                        handleRecordingStopped(message);
+                        break;
+                    case 'recording_status':
+                        handleRecordingStatusUpdate(message);
+                        break;
+                    default:
+                        log('📋 未知消息类型: ' + message.type);
+                }
+            } catch (e) {
+                log('❌ 解析消息失败: ' + e.message, 'error');
+            }
+        }
+
+        // 处理视频帧
+        function handleVideoFrame(arrayBuffer) {
+            receivedFrames++;
+
+            try {
+                const blob = new Blob([arrayBuffer], { type: 'image/jpeg' });
+                const url = URL.createObjectURL(blob);
+                const img = new Image();
+
+                img.onload = function() {
+                    ctx.clearRect(0, 0, videoCanvas.width, videoCanvas.height);
+                    ctx.drawImage(img, 0, 0, videoCanvas.width, videoCanvas.height);
+                    URL.revokeObjectURL(url);
+                };
+
+                img.onerror = function() {
+                    URL.revokeObjectURL(url);
+                };
+
+                img.src = url;
+
+            } catch (e) {
+                log('❌ 处理视频帧失败: ' + e.message, 'error');
+            }
+        }
+
+        // 发送命令
+        function sendCommand(action, params = {}) {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                const command = { action, ...params };
+                const commandStr = JSON.stringify(command);
+                ws.send(commandStr);
+                log('📤 发送命令: ' + commandStr);
+                return true;
+            } else {
+                log('❌ WebSocket未连接', 'error');
+                return false;
+            }
+        }
+
+        // 摄像头控制
+        function startCamera() {
+            sendCommand('start_camera', { device: deviceSelect.value });
+        }
+
+        function stopCamera() {
+            sendCommand('stop_camera');
+        }
+
+        function getStatus() {
+            sendCommand('get_status');
+        }
+
+        // 录制控制
+        function startRecording() {
+            const device = deviceSelect.value;
+            const resolution = recordingResolution.value;
+            const fps = parseInt(recordingFps.value);
+            const filename = recordingFilename.value.trim();
+
+            const [width, height] = resolution.split('x').map(Number);
+
+            const params = {
+                device: device,
+                width: width,
+                height: height,
+                fps: fps
+            };
+
+            if (filename) {
+                params.filename = filename.endsWith('.mjpeg') ? filename : filename + '.mjpeg';
+            }
+
+            if (sendCommand('start_recording', params)) {
+                recordingStartTime = Date.now();
+                // 开始定时更新录制状态
+                statusUpdateInterval = setInterval(getRecordingStatus, 1000);
+            }
+        }
+
+        function stopRecording() {
+            log('🛑 正在停止录制并关闭摄像头...');
+            sendCommand('stop_recording');
+            if (statusUpdateInterval) {
+                clearInterval(statusUpdateInterval);
+                statusUpdateInterval = null;
+            }
+        }
+
+        function getRecordingStatus() {
+            sendCommand('get_recording_status');
+        }
+
+        // 处理录制相关消息
+        function handleRecordingStarted(message) {
+            log('🎬 录制开始: ' + message.filename);
+            updateRecordingStatus(true, 0, 0, 0, message.filename);
+            recordingFilename.value = ''; // 清空文件名输入
+        }
+
+        function handleRecordingStopped(message) {
+            log('🛑 录制停止: ' + message.filename + ' (时长: ' + message.duration + 's, 帧数: ' + message.frame_count + ')');
+            updateRecordingStatus(false, message.duration, message.frame_count, message.file_size, message.filename);
+
+            // 录制停止后自动关闭摄像头
+            setTimeout(() => {
+                log('📹 自动关闭摄像头...');
+                sendCommand('stop_camera');
+            }, 1000); // 延迟1秒确保录制完全停止
+
+            refreshVideoList(); // 刷新视频列表
+        }
+
+        function handleRecordingStatusUpdate(message) {
+            if (message.is_recording) {
+                updateRecordingStatus(true, message.duration, message.frame_count, message.file_size, message.filename);
+            } else {
+                updateRecordingStatus(false);
+            }
+        }
+
+        // 刷新视频列表
+        function refreshVideoList() {
+            fetch('/api/videos')
+                .then(response => response.json())
+                .then(data => {
+                    displayVideoList(data.videos);
+                })
+                .catch(error => {
+                    log('❌ 获取视频列表失败: ' + error.message, 'error');
+                    videoList.innerHTML = '<p style="text-align: center; color: #dc3545; padding: 20px;">获取视频列表失败</p>';
+                });
+        }
+
+        // 显示视频列表
+        function displayVideoList(videos) {
+            if (videos.length === 0) {
+                videoList.innerHTML = '<p style="text-align: center; color: #666; padding: 20px;">暂无录制的视频</p>';
+                return;
+            }
+
+            let html = '';
+            videos.forEach(video => {
+                const date = new Date(video.timestamp * 1000).toLocaleString();
+                const size = (video.size / (1024 * 1024)).toFixed(2);
+
+                html += `
+                    <div class="video-item">
+                        <div style="font-weight: bold; margin-bottom: 5px;">${video.filename}</div>
+                        <div class="video-info">
+                            📅 ${date} | 📦 ${size} MB
+                        </div>
+                        <div class="video-actions">
+                            <button class="btn btn-primary btn-small" onclick="playVideo('${video.url}')">▶️ 播放</button>
+                            <button class="btn btn-success btn-small" onclick="downloadVideo('${video.download_url}', '${video.filename}')">💾 下载</button>
+                        </div>
+                    </div>
+                `;
+            });
+
+            videoList.innerHTML = html;
+        }
+
+        // 播放视频
+        function playVideo(url) {
+            window.open(url, '_blank');
+            log('▶️ 在新窗口中播放视频');
+        }
+
+        // 下载视频
+        function downloadVideo(downloadUrl, filename) {
+            const link = document.createElement('a');
+            link.href = downloadUrl;
+            link.download = filename;
+            link.style.display = 'none';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            log('💾 开始下载视频: ' + filename);
+        }
+
+        // 清空日志
+        function clearLog() {
+            logContent.textContent = '';
+            receivedFrames = 0;
+            log('日志已清空');
+        }
+
+        // 事件监听器
+        connectBtn.addEventListener('click', connectWebSocket);
+        disconnectBtn.addEventListener('click', disconnectWebSocket);
+        startCameraBtn.addEventListener('click', startCamera);
+        stopCameraBtn.addEventListener('click', stopCamera);
+        getStatusBtn.addEventListener('click', getStatus);
+        startRecordingBtn.addEventListener('click', startRecording);
+        stopRecordingBtn.addEventListener('click', stopRecording);
+        getRecordingStatusBtn.addEventListener('click', getRecordingStatus);
+        refreshVideoListBtn.addEventListener('click', refreshVideoList);
+        clearLogBtn.addEventListener('click', clearLog);
+
+        // 页面加载完成
+        document.addEventListener('DOMContentLoaded', function() {
+            log('🎬 视频录制页面已加载');
+            log('点击"连接"开始使用录制功能');
+            updateButtons(false);
+            updateRecordingStatus(false);
+        });
+    </script>
+</body>
+</html>

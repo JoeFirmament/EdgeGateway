@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🎨 UI风格参考 - 摄像头服务器</title>
+    <style>
+        /* 统一UI风格参考 - 基于用户偏好设计 */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, rgba(240, 242, 245, 0.9) 0%, rgba(250, 251, 252, 0.95) 100%);
+            color: rgba(44, 62, 80, 0.9);
+            line-height: 1.6;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            font-weight: 300;
+            color: rgba(44, 62, 80, 0.9);
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            font-size: 1.1rem;
+            color: rgba(127, 140, 141, 0.8);
+        }
+
+        /* 卡片样式 - 很小的边框圆角，低饱和度，减少透明度 */
+        .card {
+            background: rgba(255, 255, 255, 0.85);
+            border-radius: 8px;
+            padding: 24px;
+            box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid rgba(236, 240, 241, 0.6);
+        }
+
+        .card-title {
+            font-size: 1.3rem;
+            font-weight: 500;
+            color: rgba(44, 62, 80, 0.9);
+            margin: 0;
+        }
+
+        /* 按钮样式 - 无颜色渐变，很小的圆角 */
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .btn-primary {
+            background: rgba(52, 152, 219, 0.9);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: rgba(41, 128, 185, 0.95);
+            transform: translateY(-1px);
+        }
+
+        .btn-success {
+            background: rgba(46, 204, 113, 0.9);
+            color: white;
+        }
+
+        .btn-success:hover {
+            background: rgba(39, 174, 96, 0.95);
+            transform: translateY(-1px);
+        }
+
+        .btn-warning {
+            background: rgba(243, 156, 18, 0.9);
+            color: white;
+        }
+
+        .btn-warning:hover {
+            background: rgba(212, 136, 16, 0.95);
+            transform: translateY(-1px);
+        }
+
+        .btn-danger {
+            background: rgba(231, 76, 60, 0.9);
+            color: white;
+        }
+
+        .btn-danger:hover {
+            background: rgba(192, 57, 43, 0.95);
+            transform: translateY(-1px);
+        }
+
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .btn-small {
+            padding: 6px 12px;
+            font-size: 12px;
+        }
+
+        /* 表单样式 */
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 500;
+            color: rgba(44, 62, 80, 0.8);
+        }
+
+        .form-select, .form-input {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid rgba(189, 195, 199, 0.6);
+            border-radius: 4px;
+            background: rgba(255, 255, 255, 0.9);
+            font-size: 14px;
+            color: rgba(44, 62, 80, 0.9);
+        }
+
+        /* 状态面板 */
+        .status-panel {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+            margin: 16px 0;
+        }
+
+        .status-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 0;
+        }
+
+        .status-label {
+            font-weight: 500;
+            color: rgba(127, 140, 141, 0.8);
+        }
+
+        .status-value {
+            font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+            font-weight: 600;
+            color: rgba(44, 62, 80, 0.9);
+        }
+
+        .status-value.success {
+            color: rgba(39, 174, 96, 0.9);
+        }
+
+        .status-value.warning {
+            color: rgba(243, 156, 18, 0.9);
+        }
+
+        .status-value.error {
+            color: rgba(231, 76, 60, 0.9);
+        }
+
+        /* 连接状态 */
+        .connection-status {
+            padding: 8px 16px;
+            border-radius: 4px;
+            font-weight: 500;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            margin-bottom: 16px;
+            font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+        }
+
+        .status-connected {
+            background: rgba(46, 204, 113, 0.1);
+            color: rgba(39, 174, 96, 0.9);
+            border: 1px solid rgba(46, 204, 113, 0.3);
+        }
+
+        .status-disconnected {
+            background: rgba(231, 76, 60, 0.1);
+            color: rgba(192, 57, 43, 0.9);
+            border: 1px solid rgba(231, 76, 60, 0.3);
+        }
+
+        .status-connecting {
+            background: rgba(243, 156, 18, 0.1);
+            color: rgba(212, 136, 16, 0.9);
+            border: 1px solid rgba(243, 156, 18, 0.3);
+        }
+
+        /* 进度条 */
+        .progress-bar {
+            background: rgba(233, 236, 239, 0.6);
+            height: 8px;
+            border-radius: 2px;
+            overflow: hidden;
+            margin-top: 8px;
+        }
+
+        .progress-fill {
+            height: 100%;
+            transition: width 0.3s ease;
+            border-radius: 2px;
+        }
+
+        .progress-fill.low {
+            background: rgba(46, 204, 113, 0.8);
+        }
+
+        .progress-fill.medium {
+            background: rgba(243, 156, 18, 0.8);
+        }
+
+        .progress-fill.high {
+            background: rgba(231, 76, 60, 0.8);
+        }
+
+        /* 布局网格 */
+        .grid-2 {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+
+        .grid-3 {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+        }
+
+        .control-row {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        /* 日志容器 */
+        .log-container {
+            background: rgba(44, 62, 80, 0.95);
+            border-radius: 8px;
+            overflow: hidden;
+            margin-top: 20px;
+        }
+
+        .log-header {
+            padding: 16px 20px;
+            background: rgba(52, 73, 94, 0.95);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .log-content {
+            padding: 16px 20px;
+            font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+            font-size: 13px;
+            line-height: 1.5;
+            color: rgba(236, 240, 241, 0.9);
+            background: rgba(44, 62, 80, 0.95);
+            max-height: 300px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+        }
+
+        /* 响应式设计 */
+        @media (max-width: 768px) {
+            .grid-2, .grid-3 {
+                grid-template-columns: 1fr;
+            }
+
+            .control-row {
+                flex-direction: column;
+            }
+
+            .btn {
+                justify-content: center;
+            }
+        }
+
+        /* 设计说明样式 */
+        .design-note {
+            background: rgba(52, 152, 219, 0.1);
+            border: 1px solid rgba(52, 152, 219, 0.3);
+            border-radius: 4px;
+            padding: 16px;
+            margin: 16px 0;
+        }
+
+        .design-note h4 {
+            color: rgba(52, 152, 219, 0.9);
+            margin-bottom: 8px;
+        }
+
+        .design-note ul {
+            margin-left: 20px;
+            color: rgba(44, 62, 80, 0.8);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- 页面标题 -->
+        <div class="header">
+            <h1>🎨 UI风格参考</h1>
+            <p>统一的用户界面设计规范和组件样式参考</p>
+        </div>
+
+        <!-- 设计原则 -->
+        <div class="card">
+            <div class="card-header">
+                <h3 class="card-title">📋 设计原则</h3>
+            </div>
+
+            <div class="design-note">
+                <h4>🎯 用户偏好设计要求</h4>
+                <ul>
+                    <li>✅ <strong>很小的边框圆角</strong> - 卡片8px，按钮4px，进度条2px</li>
+                    <li>✅ <strong>低饱和度颜色</strong> - 使用rgba()透明度控制，颜色柔和</li>
+                    <li>✅ <strong>减少透明度</strong> - 背景使用0.85-0.95透明度</li>
+                    <li>✅ <strong>无颜色渐变</strong> - 按钮和元素使用纯色</li>
+                    <li>✅ <strong>移除深色外边框</strong> - 使用轻微阴影代替粗重边框</li>
+                </ul>
+            </div>
+        </div>
+
+        <!-- 按钮组件示例 -->
+        <div class="grid-2">
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title">🔘 按钮组件</h3>
+                </div>
+
+                <div class="control-row">
+                    <button class="btn btn-primary">📹 主要按钮</button>
+                    <button class="btn btn-success">✅ 成功按钮</button>
+                    <button class="btn btn-warning">⚠️ 警告按钮</button>
+                    <button class="btn btn-danger">❌ 危险按钮</button>
+                </div>
+
+                <div class="control-row">
+                    <button class="btn btn-primary btn-small">小按钮</button>
+                    <button class="btn btn-success" disabled>禁用按钮</button>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title">📊 状态组件</h3>
+                </div>
+
+                <div class="connection-status status-connected">🟢 已连接</div>
+                <div class="connection-status status-connecting">🟡 连接中</div>
+                <div class="connection-status status-disconnected">🔴 未连接</div>
+
+                <div class="status-panel">
+                    <div class="status-item">
+                        <span class="status-label">正常状态:</span>
+                        <span class="status-value success">运行中</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-label">警告状态:</span>
+                        <span class="status-value warning">注意</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-label">错误状态:</span>
+                        <span class="status-value error">失败</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 颜色参考 -->
+        <div class="card">
+            <div class="card-header">
+                <h3 class="card-title">🎨 颜色参考</h3>
+            </div>
+
+            <div class="design-note">
+                <h4>🎯 主要颜色</h4>
+                <ul>
+                    <li><strong>主文字:</strong> rgba(44, 62, 80, 0.9)</li>
+                    <li><strong>次要文字:</strong> rgba(127, 140, 141, 0.8)</li>
+                    <li><strong>主要蓝色:</strong> rgba(52, 152, 219, 0.9)</li>
+                    <li><strong>成功绿色:</strong> rgba(46, 204, 113, 0.9)</li>
+                    <li><strong>警告橙色:</strong> rgba(243, 156, 18, 0.9)</li>
+                    <li><strong>危险红色:</strong> rgba(231, 76, 60, 0.9)</li>
+                </ul>
+            </div>
+
+            <div class="design-note">
+                <h4>🎯 字体规范</h4>
+                <ul>
+                    <li><strong>主字体:</strong> 'SF Pro Display', -apple-system, BlinkMacSystemFont</li>
+                    <li><strong>等宽字体:</strong> 'SF Mono', Monaco, 'Cascadia Code', monospace</li>
+                    <li><strong>标题大小:</strong> 2.5rem (h1), 1.3rem (card-title)</li>
+                    <li><strong>按钮字体:</strong> 14px, font-weight: 500</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 页面加载完成后的初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('🎨 UI风格参考页面已加载');
+        });
+    </script>
+</body>
+</html>

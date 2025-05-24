@@ -1,0 +1,585 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🖥️ 系统信息 - 深视边缘视觉平台</title>
+    <link rel="stylesheet" href="/static/css/unified-style.css">
+    <style>
+        /* 统一UI风格 - 基于frame_extraction.html */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, rgba(240, 242, 245, 0.9) 0%, rgba(250, 251, 252, 0.95) 100%);
+            color: rgba(44, 62, 80, 0.9);
+            line-height: 1.6;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            font-weight: 300;
+            color: rgba(44, 62, 80, 0.9);
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            font-size: 1.1rem;
+            color: rgba(127, 140, 141, 0.8);
+        }
+
+        .card {
+            background: rgba(255, 255, 255, 0.85);
+            border-radius: 8px;
+            padding: 24px;
+            box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid rgba(236, 240, 241, 0.6);
+        }
+
+        .card-title {
+            font-size: 1.3rem;
+            font-weight: 500;
+            color: rgba(44, 62, 80, 0.9);
+            margin: 0;
+        }
+
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .btn-primary {
+            background: rgba(52, 152, 219, 0.9);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: rgba(41, 128, 185, 0.95);
+            transform: translateY(-1px);
+        }
+
+        .btn-small {
+            padding: 6px 12px;
+            font-size: 12px;
+        }
+
+        .status-panel {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 16px;
+            margin: 16px 0;
+        }
+
+        .status-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 0;
+        }
+
+        .status-label {
+            font-weight: 500;
+            color: rgba(127, 140, 141, 0.8);
+        }
+
+        .status-value {
+            font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+            font-weight: 600;
+            color: rgba(44, 62, 80, 0.9);
+        }
+
+        .status-value.success {
+            color: rgba(39, 174, 96, 0.9);
+        }
+
+        .status-value.warning {
+            color: rgba(243, 156, 18, 0.9);
+        }
+
+        .status-value.error {
+            color: rgba(231, 76, 60, 0.9);
+        }
+
+        .grid-2 {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+
+        .grid-3 {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+        }
+
+        .progress-bar {
+            background: rgba(233, 236, 239, 0.6);
+            height: 8px;
+            border-radius: 2px;
+            overflow: hidden;
+            margin-top: 8px;
+        }
+
+        .progress-fill {
+            height: 100%;
+            transition: width 0.3s ease;
+            border-radius: 2px;
+        }
+
+        .progress-fill.low {
+            background: rgba(46, 204, 113, 0.8);
+        }
+
+        .progress-fill.medium {
+            background: rgba(243, 156, 18, 0.8);
+        }
+
+        .progress-fill.high {
+            background: rgba(231, 76, 60, 0.8);
+        }
+
+        .log-container {
+            background: rgba(44, 62, 80, 0.95);
+            border-radius: 8px;
+            overflow: hidden;
+            margin-top: 20px;
+        }
+
+        .log-header {
+            padding: 16px 20px;
+            background: rgba(52, 73, 94, 0.95);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .log-content {
+            padding: 16px 20px;
+            font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+            font-size: 13px;
+            line-height: 1.5;
+            color: rgba(236, 240, 241, 0.9);
+            background: rgba(44, 62, 80, 0.95);
+            max-height: 300px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+        }
+
+        @media (max-width: 768px) {
+            .grid-2, .grid-3 {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <!-- 顶部导航 -->
+        <div id="navigation-container"></div>
+
+        <!-- 页面标题 -->
+        <header class="page-header">
+            <h1 class="page-title">System Information</h1>
+            <p class="page-subtitle">DeepVision Edge Platform - Real-time system monitoring and hardware status</p>
+        </header>
+
+        <!-- 系统概览 -->
+        <div class="grid-3">
+            <!-- CPU信息 -->
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title">🔧 CPU信息</h3>
+                    <button class="btn btn-primary btn-small" onclick="refreshCpuInfo()">刷新</button>
+                </div>
+
+                <div class="status-panel">
+                    <div class="status-item">
+                        <span class="status-label">CPU型号:</span>
+                        <span class="status-value" id="cpuModel">-</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-label">核心数:</span>
+                        <span class="status-value" id="cpuCores">-</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-label">使用率:</span>
+                        <span class="status-value" id="cpuUsage">-</span>
+                    </div>
+                </div>
+
+                <div class="progress-bar">
+                    <div class="progress-fill low" id="cpuProgressBar" style="width: 0%;"></div>
+                </div>
+            </div>
+
+            <!-- 内存信息 -->
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title">💾 内存信息</h3>
+                    <button class="btn btn-primary btn-small" onclick="refreshMemoryInfo()">刷新</button>
+                </div>
+
+                <div class="status-panel">
+                    <div class="status-item">
+                        <span class="status-label">总内存:</span>
+                        <span class="status-value" id="totalMemory">-</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-label">已使用:</span>
+                        <span class="status-value" id="usedMemory">-</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-label">使用率:</span>
+                        <span class="status-value" id="memoryUsage">-</span>
+                    </div>
+                </div>
+
+                <div class="progress-bar">
+                    <div class="progress-fill low" id="memoryProgressBar" style="width: 0%;"></div>
+                </div>
+            </div>
+
+            <!-- 存储信息 -->
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title">💿 存储信息</h3>
+                    <button class="btn btn-primary btn-small" onclick="refreshStorageInfo()">刷新</button>
+                </div>
+
+                <div class="status-panel">
+                    <div class="status-item">
+                        <span class="status-label">总容量:</span>
+                        <span class="status-value" id="totalStorage">-</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-label">已使用:</span>
+                        <span class="status-value" id="usedStorage">-</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-label">使用率:</span>
+                        <span class="status-value" id="storageUsage">-</span>
+                    </div>
+                </div>
+
+                <div class="progress-bar">
+                    <div class="progress-fill low" id="storageProgressBar" style="width: 0%;"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 系统详情 -->
+        <div class="grid-2">
+            <!-- 系统信息 -->
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title">📋 系统详情</h3>
+                </div>
+
+                <div class="status-panel">
+                    <div class="status-item">
+                        <span class="status-label">操作系统:</span>
+                        <span class="status-value" id="osName">-</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-label">内核版本:</span>
+                        <span class="status-value" id="kernelVersion">-</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-label">架构:</span>
+                        <span class="status-value" id="architecture">-</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-label">运行时间:</span>
+                        <span class="status-value" id="uptime">-</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-label">负载平均:</span>
+                        <span class="status-value" id="loadAverage">-</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 网络信息 -->
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title">🌐 网络信息</h3>
+                </div>
+
+                <div class="status-panel">
+                    <div class="status-item">
+                        <span class="status-label">主机名:</span>
+                        <span class="status-value" id="hostname">-</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-label">IP地址:</span>
+                        <span class="status-value" id="ipAddress">-</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-label">网络接口:</span>
+                        <span class="status-value" id="networkInterface">-</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-label">上传流量:</span>
+                        <span class="status-value" id="uploadTraffic">-</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-label">下载流量:</span>
+                        <span class="status-value" id="downloadTraffic">-</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 摄像头设备信息 -->
+        <div class="card">
+            <div class="card-header">
+                <h3 class="card-title">📹 摄像头设备</h3>
+                <button class="btn btn-primary btn-small" onclick="refreshCameraInfo()">刷新设备</button>
+            </div>
+
+            <div id="cameraDevices">
+                <div style="text-align: center; color: rgba(127, 140, 141, 0.7); padding: 20px;">
+                    正在加载摄像头设备信息...
+                </div>
+            </div>
+        </div>
+
+        <!-- 日志区域 -->
+        <div class="log-container">
+            <div class="log-header">
+                <h3 style="color: rgba(255, 255, 255, 0.9); margin: 0;">📋 系统日志</h3>
+                <button class="btn btn-warning btn-small" onclick="clearLog()">清空日志</button>
+            </div>
+            <div class="log-content" id="logContent"></div>
+        </div>
+    </div>
+
+    <script src="/static/js/navigation.js"></script>
+    <script>
+        // 页面加载完成后初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            log('🖥️ 系统信息页面已加载');
+            loadSystemInfo();
+            startAutoRefresh();
+        });
+
+        // 日志函数
+        function log(message, type = 'info') {
+            const logContent = document.getElementById('logContent');
+            const timestamp = new Date().toLocaleTimeString();
+            const logEntry = `[${timestamp}] ${message}\n`;
+            logContent.textContent += logEntry;
+            logContent.scrollTop = logContent.scrollHeight;
+        }
+
+        // 清空日志
+        function clearLog() {
+            document.getElementById('logContent').textContent = '';
+        }
+
+        // 加载系统信息
+        function loadSystemInfo() {
+            log('📊 正在加载系统信息...');
+            refreshCpuInfo();
+            refreshMemoryInfo();
+            refreshStorageInfo();
+            refreshSystemDetails();
+            refreshNetworkInfo();
+            refreshCameraInfo();
+        }
+
+        // 刷新系统信息 - 调用后端API获取实时数据
+        function refreshSystemInfo() {
+            log('📊 正在获取系统信息...');
+
+            fetch('/api/system/info')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        updateSystemDisplay(data.system);
+                        log('✅ 系统信息更新成功');
+                    } else {
+                        log('❌ 获取系统信息失败: ' + data.error);
+                    }
+                })
+                .catch(error => {
+                    log('❌ 网络错误: ' + error.message);
+                });
+        }
+
+        // 更新系统信息显示
+        function updateSystemDisplay(system) {
+            // 更新CPU信息
+            document.getElementById('cpuModel').textContent = system.cpu.model || 'Unknown';
+            document.getElementById('cpuCores').textContent = system.cpu.core_count || '0';
+            document.getElementById('cpuUsage').textContent = system.cpu.usage_percent.toFixed(1) + '%';
+            updateProgressBar('cpuProgressBar', system.cpu.usage_percent);
+
+            // 更新内存信息
+            const totalMemoryGB = (system.memory.total / (1024 * 1024 * 1024)).toFixed(1);
+            const usedMemoryGB = (system.memory.used / (1024 * 1024 * 1024)).toFixed(1);
+            document.getElementById('totalMemory').textContent = totalMemoryGB + ' GB';
+            document.getElementById('usedMemory').textContent = usedMemoryGB + ' GB';
+            document.getElementById('memoryUsage').textContent = system.memory.usage_percent.toFixed(1) + '%';
+            updateProgressBar('memoryProgressBar', system.memory.usage_percent);
+
+            // 更新存储信息（显示第一个存储设备）
+            if (system.storage && system.storage.length > 0) {
+                const storage = system.storage[0];
+                const totalStorageGB = (storage.total / (1024 * 1024 * 1024)).toFixed(1);
+                const usedStorageGB = (storage.used / (1024 * 1024 * 1024)).toFixed(1);
+                document.getElementById('totalStorage').textContent = totalStorageGB + ' GB';
+                document.getElementById('usedStorage').textContent = usedStorageGB + ' GB';
+                document.getElementById('storageUsage').textContent = storage.usage_percent.toFixed(1) + '%';
+                updateProgressBar('storageProgressBar', storage.usage_percent);
+            }
+
+            // 更新系统详情
+            document.getElementById('osName').textContent = system.os_name || 'Unknown';
+            document.getElementById('kernelVersion').textContent = system.kernel_version || 'Unknown';
+            document.getElementById('architecture').textContent = system.architecture || 'Unknown';
+            document.getElementById('uptime').textContent = formatUptime(system.uptime);
+            document.getElementById('loadAverage').textContent = system.load_average.map(l => l.toFixed(2)).join(', ');
+
+            // 更新网络信息（显示第一个网络接口）
+            if (system.network && system.network.length > 0) {
+                const network = system.network[0];
+                document.getElementById('hostname').textContent = system.hostname || 'Unknown';
+                document.getElementById('ipAddress').textContent = network.ip_address || 'Unknown';
+                document.getElementById('networkInterface').textContent = network.interface || 'Unknown';
+                document.getElementById('uploadTraffic').textContent = formatBytes(network.bytes_sent);
+                document.getElementById('downloadTraffic').textContent = formatBytes(network.bytes_received);
+            }
+        }
+
+        // 格式化运行时间
+        function formatUptime(seconds) {
+            const days = Math.floor(seconds / 86400);
+            const hours = Math.floor((seconds % 86400) / 3600);
+            const minutes = Math.floor((seconds % 3600) / 60);
+            return `${days}天 ${hours}小时 ${minutes}分钟`;
+        }
+
+        // 格式化字节数
+        function formatBytes(bytes) {
+            if (bytes === 0) return '0 B';
+            const k = 1024;
+            const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+
+        // 刷新摄像头信息
+        function refreshCameraInfo() {
+            log('📹 正在获取摄像头设备信息...');
+
+            fetch('/api/system/cameras')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        updateCameraDisplay(data.cameras);
+                        log('✅ 摄像头信息更新成功');
+                    } else {
+                        log('❌ 获取摄像头信息失败: ' + data.error);
+                    }
+                })
+                .catch(error => {
+                    log('❌ 网络错误: ' + error.message);
+                });
+        }
+
+        // 更新摄像头显示
+        function updateCameraDisplay(cameras) {
+            const container = document.getElementById('cameraDevices');
+
+            if (cameras.length === 0) {
+                container.innerHTML = '<div style="text-align: center; color: rgba(127, 140, 141, 0.7); padding: 20px;">未检测到摄像头设备</div>';
+                return;
+            }
+
+            let html = '';
+            cameras.forEach(camera => {
+                html += `
+                    <div class="status-item">
+                        <span class="status-label">${camera.name}:</span>
+                        <span class="status-value success">${camera.status}</span>
+                    </div>
+                `;
+            });
+
+            container.innerHTML = html;
+        }
+
+        // 兼容性方法 - 保持原有接口
+        function refreshCpuInfo() { refreshSystemInfo(); }
+        function refreshMemoryInfo() { refreshSystemInfo(); }
+        function refreshStorageInfo() { refreshSystemInfo(); }
+        function refreshSystemDetails() { refreshSystemInfo(); }
+        function refreshNetworkInfo() { refreshSystemInfo(); }
+
+        // 开始自动刷新
+        function startAutoRefresh() {
+            setInterval(() => {
+                refreshSystemInfo();
+                refreshCameraInfo();
+            }, 5000); // 每5秒刷新一次
+        }
+
+        // 更新进度条
+        function updateProgressBar(elementId, percentage) {
+            const progressBar = document.getElementById(elementId);
+            if (progressBar) {
+                progressBar.style.width = percentage + '%';
+
+                // 根据使用率设置颜色
+                progressBar.className = 'progress-fill';
+                if (percentage < 50) {
+                    progressBar.classList.add('low');
+                } else if (percentage < 80) {
+                    progressBar.classList.add('medium');
+                } else {
+                    progressBar.classList.add('high');
+                }
+            }
+        }
+    </script>
+</body>
+</html>

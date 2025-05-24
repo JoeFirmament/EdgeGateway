@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>📸 拍照功能 - 深视边缘视觉平台</title>
+    <link rel="stylesheet" href="/static/css/unified-style.css">
+    <style>
+        /* 统一UI风格 - 基于frame_extraction.html */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, rgba(240, 242, 245, 0.9) 0%, rgba(250, 251, 252, 0.95) 100%);
+            color: rgba(44, 62, 80, 0.9);
+            line-height: 1.6;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            font-weight: 300;
+            color: rgba(44, 62, 80, 0.9);
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            font-size: 1.1rem;
+            color: rgba(127, 140, 141, 0.8);
+        }
+
+        .card {
+            background: rgba(255, 255, 255, 0.85);
+            border-radius: 8px;
+            padding: 24px;
+            box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid rgba(236, 240, 241, 0.6);
+        }
+
+        .card-title {
+            font-size: 1.3rem;
+            font-weight: 500;
+            color: rgba(44, 62, 80, 0.9);
+            margin: 0;
+        }
+
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .btn-primary {
+            background: rgba(52, 152, 219, 0.9);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: rgba(41, 128, 185, 0.95);
+            transform: translateY(-1px);
+        }
+
+        .btn-success {
+            background: rgba(46, 204, 113, 0.9);
+            color: white;
+        }
+
+        .btn-success:hover {
+            background: rgba(39, 174, 96, 0.95);
+            transform: translateY(-1px);
+        }
+
+        .btn-danger {
+            background: rgba(231, 76, 60, 0.9);
+            color: white;
+        }
+
+        .btn-danger:hover {
+            background: rgba(192, 57, 43, 0.95);
+            transform: translateY(-1px);
+        }
+
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 500;
+            color: rgba(44, 62, 80, 0.8);
+        }
+
+        .form-select {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid rgba(189, 195, 199, 0.6);
+            border-radius: 4px;
+            background: rgba(255, 255, 255, 0.9);
+            font-size: 14px;
+            color: rgba(44, 62, 80, 0.9);
+        }
+
+        .video-container {
+            background: rgba(44, 62, 80, 0.05);
+            border-radius: 4px;
+            border: 1px solid rgba(189, 195, 199, 0.3);
+            overflow: hidden;
+            position: relative;
+        }
+
+        .status-panel {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+            margin: 16px 0;
+        }
+
+        .status-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 0;
+        }
+
+        .status-label {
+            font-weight: 500;
+            color: rgba(127, 140, 141, 0.8);
+        }
+
+        .status-value {
+            font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+            font-weight: 600;
+            color: rgba(44, 62, 80, 0.9);
+        }
+
+        .control-row {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        .grid-2 {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+
+        .log-container {
+            background: rgba(44, 62, 80, 0.95);
+            border-radius: 8px;
+            overflow: hidden;
+            margin-top: 20px;
+        }
+
+        .log-header {
+            padding: 16px 20px;
+            background: rgba(52, 73, 94, 0.95);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .log-content {
+            padding: 16px 20px;
+            font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+            font-size: 13px;
+            line-height: 1.5;
+            color: rgba(236, 240, 241, 0.9);
+            background: rgba(44, 62, 80, 0.95);
+            max-height: 300px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+        }
+
+        @media (max-width: 768px) {
+            .grid-2 {
+                grid-template-columns: 1fr;
+            }
+
+            .control-row {
+                flex-direction: column;
+            }
+
+            .btn {
+                justify-content: center;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <!-- 顶部导航 -->
+        <div id="navigation-container"></div>
+
+        <!-- 页面标题 -->
+        <header class="page-header">
+            <h1 class="page-title">Photo Capture</h1>
+            <p class="page-subtitle">DeepVision Edge Platform - High-quality photo capture with advanced controls</p>
+        </header>
+
+        <div class="grid-2">
+            <!-- 左侧：摄像头控制 -->
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title">📹 摄像头控制</h3>
+                </div>
+
+                <!-- 摄像头选择 -->
+                <div class="form-group">
+                    <label class="form-label">摄像头设备:</label>
+                    <select class="form-select" id="cameraSelect">
+                        <option value="">正在加载摄像头列表...</option>
+                    </select>
+                </div>
+
+                <!-- 分辨率选择 -->
+                <div class="form-group">
+                    <label class="form-label">拍照分辨率:</label>
+                    <select class="form-select" id="resolutionSelect">
+                        <option value="1920x1080">1920x1080 (Full HD)</option>
+                        <option value="1280x720">1280x720 (HD)</option>
+                        <option value="640x480">640x480 (VGA)</option>
+                    </select>
+                </div>
+
+                <!-- 控制按钮 -->
+                <div class="control-row">
+                    <button class="btn btn-primary" id="startPreviewBtn" disabled>
+                        📹 开始预览
+                    </button>
+                    <button class="btn btn-danger" id="stopPreviewBtn" disabled>
+                        🛑 停止预览
+                    </button>
+                </div>
+
+                <div class="control-row" style="margin-top: 12px;">
+                    <button class="btn btn-success" id="capturePhotoBtn" disabled>
+                        📸 拍照
+                    </button>
+                </div>
+            </div>
+
+            <!-- 右侧：预览和状态 -->
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title">📺 实时预览</h3>
+                </div>
+
+                <!-- 视频预览 -->
+                <div class="video-container" style="height: 300px;">
+                    <video id="videoPreview" style="width: 100%; height: 100%; object-fit: contain; display: none;" autoplay muted></video>
+                    <div id="noPreview" style="display: flex; align-items: center; justify-content: center; height: 100%; color: rgba(127, 140, 141, 0.7);">
+                        请选择摄像头并开始预览
+                    </div>
+                </div>
+
+                <!-- 状态信息 -->
+                <div class="status-panel">
+                    <div class="status-item">
+                        <span class="status-label">预览状态:</span>
+                        <span class="status-value" id="previewStatus">待机</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-label">当前分辨率:</span>
+                        <span class="status-value" id="currentResolution">-</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 拍照结果 -->
+        <div class="card" id="photoResultCard" style="display: none;">
+            <div class="card-header">
+                <h3 class="card-title">📷 拍照结果</h3>
+            </div>
+
+            <div class="status-panel">
+                <div class="status-item">
+                    <span class="status-label">拍照时间:</span>
+                    <span class="status-value" id="photoTime">-</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">照片大小:</span>
+                    <span class="status-value" id="photoSize">-</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">文件名:</span>
+                    <span class="status-value" id="photoFilename">-</span>
+                </div>
+            </div>
+
+            <!-- 照片预览 -->
+            <div class="form-group">
+                <label class="form-label">照片预览:</label>
+                <div class="video-container" style="height: 400px;">
+                    <img id="photoPreview" style="width: 100%; height: 100%; object-fit: contain; display: none;" alt="照片预览">
+                    <div id="noPhoto" style="display: flex; align-items: center; justify-content: center; height: 100%; color: rgba(127, 140, 141, 0.7);">
+                        暂无照片
+                    </div>
+                </div>
+            </div>
+
+            <div class="control-row">
+                <button class="btn btn-success" id="downloadPhotoBtn" disabled>
+                    💾 下载照片
+                </button>
+            </div>
+        </div>
+
+        <!-- 日志区域 -->
+        <div class="log-container">
+            <div class="log-header">
+                <h3 style="color: rgba(255, 255, 255, 0.9); margin: 0;">📋 操作日志</h3>
+                <button class="btn btn-warning btn-small" onclick="clearLog()">清空日志</button>
+            </div>
+            <div class="log-content" id="logContent"></div>
+        </div>
+    </div>
+
+    <script src="/static/js/navigation.js"></script>
+    <script>
+        // 页面加载完成后初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            log('📸 拍照功能已加载');
+            loadCameraList();
+            bindEvents();
+        });
+
+        // 绑定事件
+        function bindEvents() {
+            document.getElementById('cameraSelect').addEventListener('change', onCameraSelect);
+            document.getElementById('startPreviewBtn').addEventListener('click', startPreview);
+            document.getElementById('stopPreviewBtn').addEventListener('click', stopPreview);
+            document.getElementById('capturePhotoBtn').addEventListener('click', capturePhoto);
+            document.getElementById('downloadPhotoBtn').addEventListener('click', downloadPhoto);
+        }
+
+        // 日志函数
+        function log(message, type = 'info') {
+            const logContent = document.getElementById('logContent');
+            const timestamp = new Date().toLocaleTimeString();
+            const logEntry = `[${timestamp}] ${message}\n`;
+            logContent.textContent += logEntry;
+            logContent.scrollTop = logContent.scrollHeight;
+        }
+
+        // 清空日志
+        function clearLog() {
+            document.getElementById('logContent').textContent = '';
+        }
+
+        // 加载摄像头列表
+        function loadCameraList() {
+            log('📹 正在加载摄像头列表...');
+            // TODO: 实现摄像头列表加载
+        }
+
+        // 摄像头选择处理
+        function onCameraSelect(event) {
+            // TODO: 实现摄像头选择逻辑
+        }
+
+        // 开始预览
+        function startPreview() {
+            log('📹 开始视频预览...');
+            // TODO: 实现预览功能
+        }
+
+        // 停止预览
+        function stopPreview() {
+            log('🛑 停止视频预览');
+            // TODO: 实现停止预览
+        }
+
+        // 拍照
+        function capturePhoto() {
+            log('📸 正在拍照...');
+            // TODO: 实现拍照功能
+        }
+
+        // 下载照片
+        function downloadPhoto() {
+            log('💾 开始下载照片...');
+            // TODO: 实现照片下载
+        }
+    </script>
+</body>
+</html>

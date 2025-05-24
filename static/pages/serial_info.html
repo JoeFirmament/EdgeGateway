@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🔌 串口信息 - 深视边缘视觉平台</title>
+    <link rel="stylesheet" href="/static/css/unified-style.css">
+    <style>
+        /* 页面特定样式 */
+        .serial-device {
+            background: rgba(255, 255, 255, 0.9);
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 16px;
+            border-left: 4px solid rgba(52, 152, 219, 0.8);
+        }
+
+        .serial-device.available {
+            border-left-color: rgba(46, 204, 113, 0.8);
+        }
+
+        .serial-device.busy {
+            border-left-color: rgba(243, 156, 18, 0.8);
+        }
+
+        .serial-device.error {
+            border-left-color: rgba(231, 76, 60, 0.8);
+        }
+
+        .device-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+
+        .device-name {
+            font-size: 16px;
+            font-weight: 600;
+            color: rgba(44, 62, 80, 0.9);
+        }
+
+        .device-status {
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+
+        .device-status.available {
+            background: rgba(46, 204, 113, 0.1);
+            color: rgba(39, 174, 96, 0.9);
+        }
+
+        .device-status.busy {
+            background: rgba(243, 156, 18, 0.1);
+            color: rgba(212, 130, 6, 0.9);
+        }
+
+        .device-status.error {
+            background: rgba(231, 76, 60, 0.1);
+            color: rgba(192, 57, 43, 0.9);
+        }
+
+        .device-details {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 12px;
+            margin-top: 12px;
+        }
+
+        .detail-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 6px 0;
+            border-bottom: 1px solid rgba(236, 240, 241, 0.6);
+        }
+
+        .detail-label {
+            font-weight: 500;
+            color: rgba(127, 140, 141, 0.8);
+        }
+
+        .detail-value {
+            font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+            color: rgba(44, 62, 80, 0.9);
+        }
+
+        .no-devices {
+            text-align: center;
+            padding: 40px;
+            color: rgba(127, 140, 141, 0.7);
+        }
+
+        .refresh-button {
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            width: 56px;
+            height: 56px;
+            border-radius: 50%;
+            background: rgba(52, 152, 219, 0.9);
+            color: white;
+            border: none;
+            font-size: 20px;
+            cursor: pointer;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            transition: all 0.3s ease;
+        }
+
+        .refresh-button:hover {
+            background: rgba(41, 128, 185, 0.95);
+            transform: translateY(-2px);
+            box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2);
+        }
+
+        .refresh-button.loading {
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <!-- 顶部导航 -->
+        <nav class="top-navigation">
+            <div class="nav-tabs">
+                <a href="/" class="nav-tab">🏠 主页</a>
+                <a href="/video_recording.html" class="nav-tab">🎬 录制</a>
+                <a href="/frame_extraction.html" class="nav-tab">🖼️ 帧提取</a>
+                <a href="/photo_capture.html" class="nav-tab">📸 拍照</a>
+                <a href="/system_info.html" class="nav-tab">🖥️ 系统</a>
+                <a href="/serial_info.html" class="nav-tab active">🔌 串口</a>
+            </div>
+        </nav>
+
+        <!-- 页面标题 -->
+        <header class="page-header">
+            <h1 class="page-title">Serial Port Information</h1>
+            <p class="page-subtitle">DeepVision Edge Platform - Serial port monitoring and management</p>
+        </header>
+
+        <!-- 串口统计 -->
+        <div class="grid grid-4">
+            <div class="card fade-in">
+                <div class="card-header">
+                    <h3 class="card-title">📊 总设备数</h3>
+                </div>
+                <div class="status-panel">
+                    <div class="status-item">
+                        <span class="status-value" id="totalDevices" style="font-size: 24px; color: rgba(52, 152, 219, 0.9);">-</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card fade-in">
+                <div class="card-header">
+                    <h3 class="card-title">✅ 可用设备</h3>
+                </div>
+                <div class="status-panel">
+                    <div class="status-item">
+                        <span class="status-value" id="availableDevices" style="font-size: 24px; color: rgba(46, 204, 113, 0.9);">-</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card fade-in">
+                <div class="card-header">
+                    <h3 class="card-title">⚠️ 占用设备</h3>
+                </div>
+                <div class="status-panel">
+                    <div class="status-item">
+                        <span class="status-value" id="busyDevices" style="font-size: 24px; color: rgba(243, 156, 18, 0.9);">-</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card fade-in">
+                <div class="card-header">
+                    <h3 class="card-title">❌ 错误设备</h3>
+                </div>
+                <div class="status-panel">
+                    <div class="status-item">
+                        <span class="status-value" id="errorDevices" style="font-size: 24px; color: rgba(231, 76, 60, 0.9);">-</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 串口设备列表 -->
+        <div class="card fade-in" style="margin-top: 32px;">
+            <div class="card-header">
+                <h3 class="card-title">🔌 串口设备列表</h3>
+                <button class="btn btn-primary" onclick="refreshSerialDevices()">🔄 刷新设备</button>
+            </div>
+            <div id="serialDevicesList">
+                <div class="no-devices">
+                    <div style="font-size: 48px; margin-bottom: 16px;">🔍</div>
+                    <div>正在扫描串口设备...</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 日志区域 -->
+        <div class="card fade-in" style="margin-top: 32px;">
+            <div class="card-header">
+                <h3 class="card-title">📋 操作日志</h3>
+                <button class="btn btn-warning" onclick="clearLog()">清空日志</button>
+            </div>
+            <div class="log-content" id="logContent"></div>
+        </div>
+
+        <!-- 浮动刷新按钮 -->
+        <button class="refresh-button" id="refreshButton" onclick="refreshSerialDevices()" title="刷新串口设备">
+            🔄
+        </button>
+    </div>
+
+    <script src="/static/js/navigation.js"></script>
+    <script>
+        // 页面加载完成后初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            log('🔌 串口信息页面已加载');
+            refreshSerialDevices();
+
+            // 添加淡入动画
+            const cards = document.querySelectorAll('.fade-in');
+            cards.forEach((card, index) => {
+                setTimeout(() => {
+                    card.style.opacity = '1';
+                    card.style.transform = 'translateY(0)';
+                }, index * 100);
+            });
+
+            // 定时自动刷新（每30秒）
+            setInterval(refreshSerialDevices, 30000);
+        });
+
+        // 日志函数
+        function log(message, type = 'info') {
+            const logContent = document.getElementById('logContent');
+            const timestamp = new Date().toLocaleTimeString();
+            const logEntry = `[${timestamp}] ${message}\n`;
+            logContent.textContent += logEntry;
+            logContent.scrollTop = logContent.scrollHeight;
+        }
+
+        // 清空日志
+        function clearLog() {
+            document.getElementById('logContent').textContent = '';
+        }
+
+        // 刷新串口设备
+        function refreshSerialDevices() {
+            const refreshButton = document.getElementById('refreshButton');
+            refreshButton.classList.add('loading');
+
+            log('🔍 正在扫描串口设备...');
+
+            fetch('/api/serial/devices')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        displaySerialDevices(data.devices);
+                        updateStatistics(data.devices);
+                        log(`✅ 扫描完成，发现 ${data.devices.length} 个串口设备`);
+                    } else {
+                        log(`❌ 获取串口设备失败: ${data.error || '未知错误'}`);
+                        showNoDevices('获取设备信息失败');
+                    }
+                })
+                .catch(error => {
+                    log(`❌ 网络错误: ${error.message}`);
+                    showNoDevices('网络连接失败');
+                })
+                .finally(() => {
+                    refreshButton.classList.remove('loading');
+                });
+        }
+
+        // 显示串口设备
+        function displaySerialDevices(devices) {
+            const container = document.getElementById('serialDevicesList');
+
+            if (!devices || devices.length === 0) {
+                showNoDevices('未发现串口设备');
+                return;
+            }
+
+            let html = '';
+            devices.forEach(device => {
+                const statusClass = getStatusClass(device.status);
+                html += `
+                    <div class="serial-device ${statusClass}">
+                        <div class="device-header">
+                            <div class="device-name">${device.device}</div>
+                            <div class="device-status ${statusClass}">${getStatusText(device.status)}</div>
+                        </div>
+                        <div class="device-details">
+                            <div class="detail-item">
+                                <span class="detail-label">设备类型:</span>
+                                <span class="detail-value">${device.type || 'Unknown'}</span>
+                            </div>
+                            <div class="detail-item">
+                                <span class="detail-label">描述:</span>
+                                <span class="detail-value">${device.description || '-'}</span>
+                            </div>
+                            <div class="detail-item">
+                                <span class="detail-label">驱动:</span>
+                                <span class="detail-value">${device.driver || '-'}</span>
+                            </div>
+                            <div class="detail-item">
+                                <span class="detail-label">权限:</span>
+                                <span class="detail-value">${device.permissions || '-'}</span>
+                            </div>
+                            <div class="detail-item">
+                                <span class="detail-label">最后访问:</span>
+                                <span class="detail-value">${device.last_access || '-'}</span>
+                            </div>
+                            <div class="detail-item">
+                                <span class="detail-label">波特率支持:</span>
+                                <span class="detail-value">${device.supported_bauds || '-'}</span>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+
+            container.innerHTML = html;
+        }
+
+        // 显示无设备状态
+        function showNoDevices(message) {
+            const container = document.getElementById('serialDevicesList');
+            container.innerHTML = `
+                <div class="no-devices">
+                    <div style="font-size: 48px; margin-bottom: 16px;">📭</div>
+                    <div>${message}</div>
+                </div>
+            `;
+        }
+
+        // 更新统计信息
+        function updateStatistics(devices) {
+            const total = devices.length;
+            const available = devices.filter(d => d.status === 'available').length;
+            const busy = devices.filter(d => d.status === 'busy').length;
+            const error = devices.filter(d => d.status === 'error').length;
+
+            document.getElementById('totalDevices').textContent = total;
+            document.getElementById('availableDevices').textContent = available;
+            document.getElementById('busyDevices').textContent = busy;
+            document.getElementById('errorDevices').textContent = error;
+        }
+
+        // 获取状态样式类
+        function getStatusClass(status) {
+            switch (status) {
+                case 'available': return 'available';
+                case 'busy': return 'busy';
+                case 'error': return 'error';
+                default: return '';
+            }
+        }
+
+        // 获取状态文本
+        function getStatusText(status) {
+            switch (status) {
+                case 'available': return '可用';
+                case 'busy': return '占用';
+                case 'error': return '错误';
+                default: return '未知';
+            }
+        }
+    </script>
+</body>
+</html>

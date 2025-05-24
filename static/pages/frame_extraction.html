@@ -1,0 +1,521 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🖼️ MJPEG帧提取工具 - 深视边缘视觉平台</title>
+    <link rel="stylesheet" href="/static/css/unified-style.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- 顶部导航 -->
+        <div id="navigation-container"></div>
+
+        <!-- 页面标题 -->
+        <header class="page-header">
+            <h1 class="page-title">Frame Extraction</h1>
+            <p class="page-subtitle">DeepVision Edge Platform - Extract frames from MJPEG videos for AI training</p>
+        </header>
+
+        <!-- 主要内容区域 -->
+        <div class="grid grid-2">
+            <!-- 左侧：文件选择和提取控制 -->
+            <div class="card fade-in">
+                <div class="card-header">
+                    <h3 class="card-title">📁 文件选择</h3>
+                </div>
+
+                <!-- 录制文件列表 -->
+                <div class="form-group">
+                    <label class="form-label">选择MJPEG文件:</label>
+                    <select class="form-select" id="videoFileSelect">
+                        <option value="">正在加载录制文件...</option>
+                    </select>
+                </div>
+
+                <!-- 文件信息显示 -->
+                <div class="status-panel" id="fileInfo" style="display: none;">
+                    <div class="status-item">
+                        <span class="status-label">文件名:</span>
+                        <span class="status-value" id="fileName">-</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-label">文件大小:</span>
+                        <span class="status-value" id="fileSize">-</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-label">创建时间:</span>
+                        <span class="status-value" id="fileTime">-</span>
+                    </div>
+                </div>
+
+                <!-- 提取设置 -->
+                <div class="form-group">
+                    <label class="form-label">提取间隔:</label>
+                    <select class="form-select" id="extractInterval">
+                        <option value="1">每帧提取 (全部帧)</option>
+                        <option value="5" selected>每5帧提取一次</option>
+                        <option value="10">每10帧提取一次</option>
+                        <option value="30">每30帧提取一次 (约1秒)</option>
+                        <option value="60">每60帧提取一次 (约2秒)</option>
+                    </select>
+                </div>
+
+                <!-- 输出格式 -->
+                <div class="form-group">
+                    <label class="form-label">输出格式:</label>
+                    <select class="form-select" id="outputFormat">
+                        <option value="jpg" selected>JPEG (.jpg)</option>
+                        <option value="png">PNG (.png)</option>
+                    </select>
+                </div>
+
+                <!-- 控制按钮 -->
+                <div class="control-row">
+                    <button class="btn btn-primary" id="startExtractionBtn" disabled>
+                        🚀 开始提取
+                    </button>
+                    <button class="btn btn-danger" id="stopExtractionBtn" disabled>
+                        🛑 停止提取
+                    </button>
+                </div>
+            </div>
+
+            <!-- 右侧：提取状态和进度 -->
+            <div class="card fade-in">
+                <div class="card-header">
+                    <h3 class="card-title">📊 提取状态</h3>
+                </div>
+
+                <!-- 进度显示 -->
+                <div class="status-panel">
+                    <div class="status-item">
+                        <span class="status-label">提取状态:</span>
+                        <span class="status-value" id="extractionStatus">待机</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-label">已提取帧数:</span>
+                        <span class="status-value" id="extractedFrames">0</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-label">总帧数:</span>
+                        <span class="status-value" id="totalFrames">-</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-label">进度:</span>
+                        <span class="status-value" id="progress">0%</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-label">输出目录:</span>
+                        <span class="status-value" id="outputDir">-</span>
+                    </div>
+                </div>
+
+                <!-- 进度条 -->
+                <div style="margin: 16px 0;">
+                    <div style="background: rgba(233, 236, 239, 0.6); height: 8px; border-radius: 2px; overflow: hidden;">
+                        <div id="progressBar" style="background: rgba(120, 150, 130, 0.6); height: 100%; width: 0%; transition: width 0.3s ease;"></div>
+                    </div>
+                </div>
+
+                <!-- 最新提取的帧预览 -->
+                <div class="form-group">
+                    <label class="form-label">提取帧预览:</label>
+                    <div class="video-container" style="height: 200px;">
+                        <div id="framePreview" style="width: 100%; height: 100%; display: none; align-items: center; justify-content: center;"></div>
+                        <div id="noPreview" style="display: flex; align-items: center; justify-content: center; height: 100%; color: rgba(127, 140, 141, 0.7);">
+                            暂无预览
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 提取结果 -->
+        <div class="card fade-in" id="resultsCard" style="display: none;">
+            <div class="card-header">
+                <h3 class="card-title">📦 提取结果</h3>
+                <div class="card-actions">
+                    <button class="btn btn-success btn-small" id="downloadResultsBtn" disabled>
+                        💾 下载压缩包
+                    </button>
+                </div>
+            </div>
+
+            <div class="status-panel">
+                <div class="status-item">
+                    <span class="status-label">提取完成时间:</span>
+                    <span class="status-value" id="completionTime">-</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">成功提取帧数:</span>
+                    <span class="status-value success" id="successFrames">0</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">压缩包大小:</span>
+                    <span class="status-value" id="archiveSize">-</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">下载链接:</span>
+                    <span class="status-value" id="downloadLink">-</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- 日志区域 -->
+        <div class="log-container">
+            <div class="log-header">
+                <h3 style="color: rgba(255, 255, 255, 0.9); margin: 0;">📋 提取日志</h3>
+                <button class="btn btn-warning btn-small" onclick="clearLog()">清空日志</button>
+            </div>
+            <div class="log-content" id="logContent"></div>
+        </div>
+    </div>
+
+    <script src="/static/js/navigation.js"></script>
+    <script>
+        // 全局变量
+        let extractionInProgress = false;
+        let extractionTaskId = null;
+
+        // 页面加载完成后初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            log('🎬 MJPEG帧提取工具已加载');
+            loadVideoFiles();
+            bindEvents();
+        });
+
+        // 绑定事件
+        function bindEvents() {
+            // 文件选择事件
+            document.getElementById('videoFileSelect').addEventListener('change', onFileSelect);
+
+            // 按钮事件
+            document.getElementById('startExtractionBtn').addEventListener('click', startExtraction);
+            document.getElementById('stopExtractionBtn').addEventListener('click', stopExtraction);
+            document.getElementById('downloadResultsBtn').addEventListener('click', downloadResults);
+        }
+
+        // 加载录制文件列表
+        function loadVideoFiles() {
+            log('📁 正在加载录制文件列表...');
+
+            fetch('/api/videos')
+                .then(response => response.json())
+                .then(data => {
+                    const select = document.getElementById('videoFileSelect');
+                    select.innerHTML = '<option value="">请选择MJPEG文件</option>';
+
+                    if (data.videos && data.videos.length > 0) {
+                        // 只显示MJPEG文件
+                        const mjpegFiles = data.videos.filter(video =>
+                            video.filename.toLowerCase().endsWith('.mjpeg')
+                        );
+
+                        if (mjpegFiles.length > 0) {
+                            mjpegFiles.forEach(video => {
+                                const option = document.createElement('option');
+                                option.value = video.filename;
+                                option.textContent = `${video.filename} (${(video.size / 1024 / 1024).toFixed(1)} MB)`;
+                                option.dataset.video = JSON.stringify(video);
+                                select.appendChild(option);
+                            });
+                            log(`✅ 加载了 ${mjpegFiles.length} 个MJPEG文件`);
+                        } else {
+                            log('⚠️ 没有找到MJPEG文件');
+                            select.innerHTML = '<option value="">没有找到MJPEG文件</option>';
+                        }
+                    } else {
+                        log('⚠️ 没有找到录制文件');
+                        select.innerHTML = '<option value="">没有找到录制文件</option>';
+                    }
+                })
+                .catch(error => {
+                    log(`❌ 加载文件列表失败: ${error.message}`, 'error');
+                    const select = document.getElementById('videoFileSelect');
+                    select.innerHTML = '<option value="">加载失败，请刷新重试</option>';
+                });
+        }
+
+        // 文件选择处理
+        function onFileSelect(event) {
+            const select = event.target;
+            const selectedOption = select.options[select.selectedIndex];
+
+            if (selectedOption.value && selectedOption.dataset.video) {
+                const video = JSON.parse(selectedOption.dataset.video);
+                showFileInfo(video);
+                document.getElementById('startExtractionBtn').disabled = false;
+                log(`📄 选择文件: ${video.filename}`);
+            } else {
+                hideFileInfo();
+                document.getElementById('startExtractionBtn').disabled = true;
+            }
+        }
+
+        // 显示文件信息
+        function showFileInfo(video) {
+            document.getElementById('fileName').textContent = video.filename;
+            document.getElementById('fileSize').textContent = `${(video.size / 1024 / 1024).toFixed(2)} MB`;
+            document.getElementById('fileTime').textContent = new Date(video.timestamp * 1000).toLocaleString();
+            document.getElementById('fileInfo').style.display = 'block';
+        }
+
+        // 隐藏文件信息
+        function hideFileInfo() {
+            document.getElementById('fileInfo').style.display = 'none';
+        }
+
+        // 日志函数
+        function log(message, type = 'info') {
+            const logContent = document.getElementById('logContent');
+            const timestamp = new Date().toLocaleTimeString();
+            const logEntry = `[${timestamp}] ${message}\n`;
+            logContent.textContent += logEntry;
+            logContent.scrollTop = logContent.scrollHeight;
+        }
+
+        // 清空日志
+        function clearLog() {
+            document.getElementById('logContent').textContent = '';
+        }
+
+        // 开始提取
+        function startExtraction() {
+            const fileSelect = document.getElementById('videoFileSelect');
+            const selectedFile = fileSelect.value;
+
+            if (!selectedFile) {
+                log('❌ 请先选择要提取的文件', 'error');
+                return;
+            }
+
+            const interval = document.getElementById('extractInterval').value;
+            const format = document.getElementById('outputFormat').value;
+
+            log(`🚀 开始提取帧: ${selectedFile}`);
+            log(`⚙️ 提取间隔: 每${interval}帧, 输出格式: ${format.toUpperCase()}`);
+
+            // 更新UI状态
+            extractionInProgress = true;
+            document.getElementById('startExtractionBtn').disabled = true;
+            document.getElementById('stopExtractionBtn').disabled = false;
+            document.getElementById('extractionStatus').textContent = '正在提取...';
+            document.getElementById('extractionStatus').className = 'status-value warning';
+
+            // 发送提取请求
+            const requestData = {
+                filename: selectedFile,
+                interval: parseInt(interval),
+                format: format
+            };
+
+            fetch('/api/frame-extraction/start', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(requestData)
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    extractionTaskId = data.task_id;
+                    log(`✅ 提取任务已启动，任务ID: ${extractionTaskId}`);
+                    startProgressPolling();
+                } else {
+                    throw new Error(data.error || '启动提取任务失败');
+                }
+            })
+            .catch(error => {
+                log(`❌ 启动提取失败: ${error.message}`, 'error');
+                resetExtractionState();
+            });
+        }
+
+        // 停止提取
+        function stopExtraction() {
+            if (!extractionTaskId) {
+                log('❌ 没有正在进行的提取任务', 'error');
+                return;
+            }
+
+            log('🛑 正在停止提取任务...');
+
+            fetch(`/api/frame-extraction/stop/${extractionTaskId}`, {
+                method: 'POST'
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    log('✅ 提取任务已停止');
+                } else {
+                    log(`⚠️ 停止任务时出现问题: ${data.error || '未知错误'}`);
+                }
+                resetExtractionState();
+            })
+            .catch(error => {
+                log(`❌ 停止提取失败: ${error.message}`, 'error');
+                resetExtractionState();
+            });
+        }
+
+        // 开始进度轮询
+        function startProgressPolling() {
+            const pollInterval = setInterval(() => {
+                if (!extractionInProgress || !extractionTaskId) {
+                    clearInterval(pollInterval);
+                    return;
+                }
+
+                fetch(`/api/frame-extraction/status/${extractionTaskId}`)
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            updateProgress(data.status);
+
+                            if (data.status.completed) {
+                                clearInterval(pollInterval);
+                                onExtractionComplete(data.status);
+                            }
+                        } else {
+                            log(`❌ 获取进度失败: ${data.error}`, 'error');
+                        }
+                    })
+                    .catch(error => {
+                        log(`❌ 轮询进度失败: ${error.message}`, 'error');
+                    });
+            }, 1000); // 每秒轮询一次
+        }
+
+        // 更新进度显示
+        function updateProgress(status) {
+            document.getElementById('extractedFrames').textContent = status.extracted_frames || 0;
+            document.getElementById('totalFrames').textContent = status.total_frames || '-';
+            document.getElementById('outputDir').textContent = status.output_dir || '-';
+
+            const progress = status.total_frames > 0 ?
+                Math.round((status.extracted_frames / status.total_frames) * 100) : 0;
+
+            document.getElementById('progress').textContent = `${progress}%`;
+            document.getElementById('progressBar').style.width = `${progress}%`;
+
+            // 提取完成后显示三帧预览
+            if (status.completed && status.preview_frames) {
+                showThreeFramePreview(status.preview_frames);
+            }
+        }
+
+        // 显示三帧预览
+        function showThreeFramePreview(previewFrames) {
+            const preview = document.getElementById('framePreview');
+            const noPreview = document.getElementById('noPreview');
+
+            log('🖼️ 开始显示三帧预览...');
+            console.log('Preview frames data:', previewFrames);
+
+            // 创建三帧预览容器
+            preview.innerHTML = `
+                <div style="display: flex; gap: 10px; justify-content: center; align-items: center; height: 100%;">
+                    <div style="text-align: center;">
+                        <div style="font-size: 12px; margin-bottom: 5px; color: #666;">首帧</div>
+                        <img src="${previewFrames.first}" style="max-width: 120px; max-height: 80px; border: 1px solid #ddd; border-radius: 4px;" alt="首帧" onload="console.log('首帧加载成功')" onerror="console.log('首帧加载失败')">
+                    </div>
+                    ${previewFrames.middle ? `
+                    <div style="text-align: center;">
+                        <div style="font-size: 12px; margin-bottom: 5px; color: #666;">中间帧</div>
+                        <img src="${previewFrames.middle}" style="max-width: 120px; max-height: 80px; border: 1px solid #ddd; border-radius: 4px;" alt="中间帧" onload="console.log('中间帧加载成功')" onerror="console.log('中间帧加载失败')">
+                    </div>
+                    ` : ''}
+                    <div style="text-align: center;">
+                        <div style="font-size: 12px; margin-bottom: 5px; color: #666;">末帧</div>
+                        <img src="${previewFrames.last}" style="max-width: 120px; max-height: 80px; border: 1px solid #ddd; border-radius: 4px;" alt="末帧" onload="console.log('末帧加载成功')" onerror="console.log('末帧加载失败')">
+                    </div>
+                </div>
+            `;
+
+            preview.style.display = 'flex';
+            noPreview.style.display = 'none';
+
+            log('🖼️ 三帧预览已设置：首帧、中间帧、末帧');
+        }
+
+        // 提取完成处理
+        function onExtractionComplete(status) {
+            log('🎉 帧提取完成！');
+            console.log('Complete status data:', status);
+
+            // 更新状态
+            document.getElementById('extractionStatus').textContent = '提取完成';
+            document.getElementById('extractionStatus').className = 'status-value success';
+
+            // 显示结果
+            document.getElementById('completionTime').textContent = new Date().toLocaleString();
+            document.getElementById('successFrames').textContent = status.extracted_frames || 0;
+            document.getElementById('archiveSize').textContent = status.archive_size || '-';
+            document.getElementById('downloadLink').textContent = status.download_url || '-';
+
+            // 启用下载按钮
+            const downloadBtn = document.getElementById('downloadResultsBtn');
+            if (status.download_url) {
+                downloadBtn.disabled = false;
+                downloadBtn.dataset.downloadUrl = status.download_url;
+            }
+
+            // 显示三帧预览
+            if (status.preview_frames) {
+                log('🖼️ 检测到预览帧数据，开始显示...');
+                showThreeFramePreview(status.preview_frames);
+            } else {
+                log('⚠️ 没有检测到预览帧数据');
+                console.log('Status object keys:', Object.keys(status));
+            }
+
+            // 显示结果卡片
+            document.getElementById('resultsCard').style.display = 'block';
+
+            // 重置状态
+            resetExtractionState();
+
+            log(`📊 提取统计: 成功提取 ${status.extracted_frames} 帧`);
+            if (status.download_url) {
+                log(`💾 下载链接: ${status.download_url}`);
+            }
+        }
+
+        // 重置提取状态
+        function resetExtractionState() {
+            extractionInProgress = false;
+            extractionTaskId = null;
+
+            document.getElementById('startExtractionBtn').disabled = false;
+            document.getElementById('stopExtractionBtn').disabled = true;
+
+            if (document.getElementById('extractionStatus').textContent === '正在提取...') {
+                document.getElementById('extractionStatus').textContent = '待机';
+                document.getElementById('extractionStatus').className = 'status-value';
+            }
+        }
+
+        // 下载结果
+        function downloadResults() {
+            const downloadBtn = document.getElementById('downloadResultsBtn');
+            const downloadUrl = downloadBtn.dataset.downloadUrl;
+
+            if (downloadUrl) {
+                log('💾 开始下载提取结果...');
+                // 创建一个隐藏的下载链接
+                const link = document.createElement('a');
+                link.href = downloadUrl;
+                link.download = '';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                log('✅ 下载已开始');
+            } else {
+                log('❌ 没有可用的下载链接', 'error');
+            }
+        }
+    </script>
+</body>
+</html>

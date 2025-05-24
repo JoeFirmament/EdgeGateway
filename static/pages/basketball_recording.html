@@ -1,0 +1,764 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🏀 篮球录制系统</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Courier New', monospace;
+            background: #1a1a1a;
+            color: #fff;
+            min-height: 100vh;
+            background-image:
+                linear-gradient(90deg, #333 1px, transparent 1px),
+                linear-gradient(180deg, #333 1px, transparent 1px);
+            background-size: 20px 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+            padding: 20px;
+            background: #ff6b35;
+            border: 3px solid #fff;
+            box-shadow: 0 0 0 3px #ff6b35;
+        }
+
+        .header h1 {
+            font-size: 2.5em;
+            text-shadow: 2px 2px 0 #000;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            font-size: 1.2em;
+            opacity: 0.9;
+        }
+
+        .grid-container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        .panel {
+            background: #2a2a2a;
+            border: 3px solid #fff;
+            padding: 20px;
+            position: relative;
+        }
+
+        .panel::before {
+            content: '';
+            position: absolute;
+            top: -3px;
+            left: -3px;
+            right: -3px;
+            bottom: -3px;
+            background: #ff6b35;
+            z-index: -1;
+        }
+
+        .panel-title {
+            font-size: 1.5em;
+            margin-bottom: 20px;
+            text-align: center;
+            color: #ff6b35;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+
+        .camera-selector {
+            background: #ff6b35;
+            color: #000;
+            padding: 30px;
+            text-align: center;
+            margin-bottom: 20px;
+            border: 3px solid #fff;
+        }
+
+        .camera-selector h2 {
+            font-size: 1.8em;
+            margin-bottom: 20px;
+            text-transform: uppercase;
+        }
+
+        .camera-buttons {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+        }
+
+        .camera-btn {
+            background: #000;
+            color: #ff6b35;
+            border: 3px solid #fff;
+            padding: 15px 25px;
+            font-size: 1.2em;
+            font-family: 'Courier New', monospace;
+            cursor: pointer;
+            text-transform: uppercase;
+            transition: all 0.2s;
+            min-width: 120px;
+        }
+
+        .camera-btn:hover {
+            background: #fff;
+            color: #000;
+        }
+
+        .camera-btn.active {
+            background: #fff;
+            color: #000;
+            box-shadow: inset 0 0 0 3px #ff6b35;
+        }
+
+        .control-group {
+            margin-bottom: 20px;
+        }
+
+        .control-group label {
+            display: block;
+            margin-bottom: 8px;
+            color: #ff6b35;
+            font-weight: bold;
+            text-transform: uppercase;
+        }
+
+        .control-input {
+            width: 100%;
+            padding: 12px;
+            background: #000;
+            color: #fff;
+            border: 2px solid #ff6b35;
+            font-family: 'Courier New', monospace;
+            font-size: 1em;
+        }
+
+        .control-input:focus {
+            outline: none;
+            border-color: #fff;
+            box-shadow: 0 0 0 2px #ff6b35;
+        }
+
+        .btn {
+            background: #ff6b35;
+            color: #000;
+            border: 3px solid #fff;
+            padding: 15px 30px;
+            font-size: 1.1em;
+            font-family: 'Courier New', monospace;
+            cursor: pointer;
+            text-transform: uppercase;
+            font-weight: bold;
+            transition: all 0.2s;
+            width: 100%;
+            margin-bottom: 10px;
+        }
+
+        .btn:hover {
+            background: #fff;
+            color: #ff6b35;
+        }
+
+        .btn:disabled {
+            background: #666;
+            color: #999;
+            cursor: not-allowed;
+            border-color: #999;
+        }
+
+        .btn-danger {
+            background: #dc3545;
+            color: #fff;
+        }
+
+        .btn-danger:hover {
+            background: #fff;
+            color: #dc3545;
+        }
+
+        .status-display {
+            background: #000;
+            border: 2px solid #ff6b35;
+            padding: 15px;
+            margin-bottom: 15px;
+            font-family: 'Courier New', monospace;
+        }
+
+        .status-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
+            padding: 5px 0;
+            border-bottom: 1px solid #333;
+        }
+
+        .status-row:last-child {
+            border-bottom: none;
+            margin-bottom: 0;
+        }
+
+        .status-label {
+            color: #ff6b35;
+        }
+
+        .status-value {
+            color: #fff;
+            font-weight: bold;
+        }
+
+        .recording-indicator {
+            background: #dc3545;
+            color: #fff;
+            padding: 10px;
+            text-align: center;
+            font-weight: bold;
+            margin-bottom: 15px;
+            border: 2px solid #fff;
+            display: none;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+
+        .video-list {
+            max-height: 300px;
+            overflow-y: auto;
+            background: #000;
+            border: 2px solid #ff6b35;
+            padding: 10px;
+        }
+
+        .video-item {
+            background: #2a2a2a;
+            border: 1px solid #ff6b35;
+            padding: 15px;
+            margin-bottom: 10px;
+        }
+
+        .video-item:last-child {
+            margin-bottom: 0;
+        }
+
+        .video-name {
+            color: #ff6b35;
+            font-weight: bold;
+            margin-bottom: 8px;
+        }
+
+        .video-info {
+            color: #ccc;
+            font-size: 0.9em;
+            margin-bottom: 10px;
+        }
+
+        .video-actions {
+            display: flex;
+            gap: 10px;
+        }
+
+        .btn-small {
+            padding: 8px 15px;
+            font-size: 0.9em;
+            margin-bottom: 0;
+            width: auto;
+        }
+
+        .connection-status {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: #000;
+            color: #ff6b35;
+            padding: 10px 15px;
+            border: 2px solid #ff6b35;
+            font-family: 'Courier New', monospace;
+            z-index: 1000;
+        }
+
+        .connection-status.connected {
+            color: #28a745;
+            border-color: #28a745;
+        }
+
+        .full-width {
+            grid-column: 1 / -1;
+        }
+
+        .basketball-icon {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            background: #ff6b35;
+            border-radius: 50%;
+            margin-right: 10px;
+            position: relative;
+        }
+
+        .basketball-icon::before {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 0;
+            right: 0;
+            height: 1px;
+            background: #000;
+        }
+
+        .basketball-icon::after {
+            content: '';
+            position: absolute;
+            left: 50%;
+            top: 0;
+            bottom: 0;
+            width: 1px;
+            background: #000;
+        }
+
+        @media (max-width: 768px) {
+            .grid-container {
+                grid-template-columns: 1fr;
+            }
+
+            .camera-buttons {
+                flex-direction: column;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="connection-status" id="connectionStatus">
+        🔴 未连接
+    </div>
+
+    <div class="container">
+        <!-- 页面标题 -->
+        <div class="header">
+            <h1><span class="basketball-icon"></span>篮球录制系统</h1>
+            <p>专业的篮球训练视频录制平台</p>
+        </div>
+
+        <!-- 摄像头选择 -->
+        <div class="camera-selector">
+            <h2><span class="basketball-icon"></span>选择摄像头</h2>
+            <div class="camera-buttons">
+                <button class="camera-btn" id="camera0Btn" data-device="/dev/video0">
+                    📹 摄像头 0
+                </button>
+                <button class="camera-btn" id="camera2Btn" data-device="/dev/video2">
+                    📹 摄像头 1
+                </button>
+            </div>
+        </div>
+
+        <div class="grid-container">
+            <!-- 录制控制 -->
+            <div class="panel">
+                <div class="panel-title">🎬 录制控制</div>
+
+                <div class="recording-indicator" id="recordingIndicator">
+                    🔴 正在录制中...
+                </div>
+
+                <div class="control-group">
+                    <label for="resolutionSelect">分辨率:</label>
+                    <select class="control-input" id="resolutionSelect">
+                        <option value="640x480">640x480 (VGA)</option>
+                        <option value="800x600">800x600 (SVGA)</option>
+                        <option value="1024x768">1024x768 (XGA)</option>
+                        <option value="1280x720">1280x720 (HD)</option>
+                        <option value="1280x960">1280x960 (SXGA)</option>
+                        <option value="1920x1080" selected>1920x1080 (Full HD)</option>
+                    </select>
+                </div>
+
+                <div class="control-group">
+                    <label for="fpsSelect">帧率:</label>
+                    <select class="control-input" id="fpsSelect">
+                        <option value="15">15 FPS</option>
+                        <option value="24">24 FPS</option>
+                        <option value="30" selected>30 FPS</option>
+                        <option value="60">60 FPS</option>
+                    </select>
+                </div>
+
+                <div class="control-group">
+                    <label for="filenameInput">文件名 (可选):</label>
+                    <input type="text" class="control-input" id="filenameInput" placeholder="留空自动生成">
+                </div>
+
+                <button class="btn" id="startRecordingBtn" disabled>
+                    🎬 开始录制
+                </button>
+                <button class="btn btn-danger" id="stopRecordingBtn" disabled>
+                    🛑 停止录制
+                </button>
+            </div>
+
+            <!-- 录制状态 -->
+            <div class="panel">
+                <div class="panel-title">📊 录制状态</div>
+
+                <div class="status-display">
+                    <div class="status-row">
+                        <span class="status-label">连接状态:</span>
+                        <span class="status-value" id="statusConnection">未连接</span>
+                    </div>
+                    <div class="status-row">
+                        <span class="status-label">选择摄像头:</span>
+                        <span class="status-value" id="statusCamera">未选择</span>
+                    </div>
+                    <div class="status-row">
+                        <span class="status-label">录制状态:</span>
+                        <span class="status-value" id="statusRecording">未录制</span>
+                    </div>
+                    <div class="status-row">
+                        <span class="status-label">录制时长:</span>
+                        <span class="status-value" id="statusDuration">00:00:00</span>
+                    </div>
+                    <div class="status-row">
+                        <span class="status-label">帧数:</span>
+                        <span class="status-value" id="statusFrames">0</span>
+                    </div>
+                    <div class="status-row">
+                        <span class="status-label">文件大小:</span>
+                        <span class="status-value" id="statusSize">0 MB</span>
+                    </div>
+                </div>
+
+                <button class="btn" id="connectBtn">🔗 连接系统</button>
+                <button class="btn btn-danger" id="disconnectBtn" disabled>❌ 断开连接</button>
+            </div>
+        </div>
+
+        <!-- 录制历史 -->
+        <div class="panel full-width">
+            <div class="panel-title">🎞️ 录制历史</div>
+            <button class="btn" id="refreshBtn" style="margin-bottom: 15px;">🔄 刷新列表</button>
+            <div class="video-list" id="videoList">
+                <div style="text-align: center; color: #666; padding: 20px;">
+                    点击"刷新列表"加载录制历史
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 全局变量
+        let ws = null;
+        let selectedDevice = null;
+        let isRecording = false;
+        let statusUpdateInterval = null;
+
+        // DOM元素
+        const connectionStatus = document.getElementById('connectionStatus');
+        const connectBtn = document.getElementById('connectBtn');
+        const disconnectBtn = document.getElementById('disconnectBtn');
+        const camera0Btn = document.getElementById('camera0Btn');
+        const camera2Btn = document.getElementById('camera2Btn');
+        const startRecordingBtn = document.getElementById('startRecordingBtn');
+        const stopRecordingBtn = document.getElementById('stopRecordingBtn');
+        const refreshBtn = document.getElementById('refreshBtn');
+        const recordingIndicator = document.getElementById('recordingIndicator');
+
+        const resolutionSelect = document.getElementById('resolutionSelect');
+        const fpsSelect = document.getElementById('fpsSelect');
+        const filenameInput = document.getElementById('filenameInput');
+
+        const statusConnection = document.getElementById('statusConnection');
+        const statusCamera = document.getElementById('statusCamera');
+        const statusRecording = document.getElementById('statusRecording');
+        const statusDuration = document.getElementById('statusDuration');
+        const statusFrames = document.getElementById('statusFrames');
+        const statusSize = document.getElementById('statusSize');
+        const videoList = document.getElementById('videoList');
+
+        // 更新连接状态
+        function updateConnectionStatus(connected) {
+            if (connected) {
+                connectionStatus.textContent = '🟢 已连接';
+                connectionStatus.classList.add('connected');
+                statusConnection.textContent = '已连接';
+                connectBtn.disabled = true;
+                disconnectBtn.disabled = false;
+            } else {
+                connectionStatus.textContent = '🔴 未连接';
+                connectionStatus.classList.remove('connected');
+                statusConnection.textContent = '未连接';
+                connectBtn.disabled = false;
+                disconnectBtn.disabled = true;
+                updateCameraSelection(null);
+                updateRecordingStatus(false);
+            }
+        }
+
+        // 更新摄像头选择状态
+        function updateCameraSelection(device) {
+            selectedDevice = device;
+
+            // 更新按钮状态
+            camera0Btn.classList.remove('active');
+            camera2Btn.classList.remove('active');
+
+            if (device === '/dev/video0') {
+                camera0Btn.classList.add('active');
+                statusCamera.textContent = '摄像头 0';
+            } else if (device === '/dev/video2') {
+                camera2Btn.classList.add('active');
+                statusCamera.textContent = '摄像头 1';
+            } else {
+                statusCamera.textContent = '未选择';
+            }
+
+            // 更新录制按钮状态
+            const connected = ws && ws.readyState === WebSocket.OPEN;
+            startRecordingBtn.disabled = !connected || !selectedDevice || isRecording;
+        }
+
+        // 更新录制状态
+        function updateRecordingStatus(recording, duration = 0, frames = 0, size = 0) {
+            isRecording = recording;
+
+            if (recording) {
+                statusRecording.textContent = '录制中';
+                statusRecording.style.color = '#dc3545';
+                recordingIndicator.style.display = 'block';
+                startRecordingBtn.disabled = true;
+                stopRecordingBtn.disabled = false;
+            } else {
+                statusRecording.textContent = '未录制';
+                statusRecording.style.color = '#fff';
+                recordingIndicator.style.display = 'none';
+                stopRecordingBtn.disabled = true;
+                updateCameraSelection(selectedDevice); // 重新计算开始按钮状态
+            }
+
+            // 更新统计信息
+            const hours = Math.floor(duration / 3600);
+            const minutes = Math.floor((duration % 3600) / 60);
+            const seconds = duration % 60;
+            statusDuration.textContent = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+            statusFrames.textContent = frames.toString();
+            statusSize.textContent = (size / (1024 * 1024)).toFixed(2) + ' MB';
+        }
+
+        // WebSocket连接
+        function connectWebSocket() {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                return;
+            }
+
+            ws = new WebSocket('ws://localhost:8081/ws/video');
+
+            ws.onopen = function() {
+                console.log('WebSocket连接成功');
+                updateConnectionStatus(true);
+            };
+
+            ws.onclose = function() {
+                console.log('WebSocket连接关闭');
+                updateConnectionStatus(false);
+                if (statusUpdateInterval) {
+                    clearInterval(statusUpdateInterval);
+                    statusUpdateInterval = null;
+                }
+            };
+
+            ws.onerror = function(error) {
+                console.error('WebSocket错误:', error);
+                updateConnectionStatus(false);
+            };
+
+            ws.onmessage = function(event) {
+                if (typeof event.data === 'string') {
+                    handleMessage(JSON.parse(event.data));
+                }
+            };
+        }
+
+        // 断开连接
+        function disconnectWebSocket() {
+            if (ws) {
+                ws.close();
+                ws = null;
+            }
+        }
+
+        // 处理消息
+        function handleMessage(message) {
+            console.log('收到消息:', message);
+
+            switch (message.type) {
+                case 'recording_started':
+                    updateRecordingStatus(true);
+                    filenameInput.value = '';
+                    // 开始定时更新状态
+                    statusUpdateInterval = setInterval(getRecordingStatus, 1000);
+                    break;
+
+                case 'recording_stopped':
+                    updateRecordingStatus(false, message.duration, message.frame_count, message.file_size);
+                    if (statusUpdateInterval) {
+                        clearInterval(statusUpdateInterval);
+                        statusUpdateInterval = null;
+                    }
+                    refreshVideoList();
+                    break;
+
+                case 'recording_status':
+                    if (message.is_recording) {
+                        updateRecordingStatus(true, message.duration, message.frame_count, message.file_size);
+                    }
+                    break;
+
+                case 'error':
+                    alert('错误: ' + message.message);
+                    break;
+            }
+        }
+
+        // 发送命令
+        function sendCommand(action, params = {}) {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                const command = { action, ...params };
+                ws.send(JSON.stringify(command));
+                console.log('发送命令:', command);
+                return true;
+            }
+            return false;
+        }
+
+        // 开始录制
+        function startRecording() {
+            if (!selectedDevice) {
+                alert('请先选择摄像头！');
+                return;
+            }
+
+            const resolution = resolutionSelect.value;
+            const fps = parseInt(fpsSelect.value);
+            const filename = filenameInput.value.trim();
+
+            const [width, height] = resolution.split('x').map(Number);
+
+            const params = {
+                device: selectedDevice,
+                width: width,
+                height: height,
+                fps: fps
+            };
+
+            if (filename) {
+                params.filename = filename.endsWith('.mjpeg') ? filename : filename + '.mjpeg';
+            }
+
+            sendCommand('start_recording', params);
+        }
+
+        // 停止录制
+        function stopRecording() {
+            sendCommand('stop_recording');
+        }
+
+        // 获取录制状态
+        function getRecordingStatus() {
+            sendCommand('get_recording_status');
+        }
+
+        // 刷新视频列表
+        function refreshVideoList() {
+            fetch('/api/videos')
+                .then(response => response.json())
+                .then(data => {
+                    displayVideoList(data.videos);
+                })
+                .catch(error => {
+                    console.error('获取视频列表失败:', error);
+                    videoList.innerHTML = '<div style="text-align: center; color: #dc3545; padding: 20px;">获取视频列表失败</div>';
+                });
+        }
+
+        // 显示视频列表
+        function displayVideoList(videos) {
+            if (videos.length === 0) {
+                videoList.innerHTML = '<div style="text-align: center; color: #666; padding: 20px;">暂无录制的视频</div>';
+                return;
+            }
+
+            let html = '';
+            videos.forEach(video => {
+                const date = new Date(video.timestamp * 1000).toLocaleString();
+                const size = (video.size / (1024 * 1024)).toFixed(2);
+
+                html += `
+                    <div class="video-item">
+                        <div class="video-name">🏀 ${video.filename}</div>
+                        <div class="video-info">
+                            📅 ${date} | 📦 ${size} MB
+                        </div>
+                        <div class="video-actions">
+                            <button class="btn btn-small" onclick="playVideo('${video.url}')">▶️ 播放</button>
+                            <button class="btn btn-small" onclick="downloadVideo('${video.download_url}', '${video.filename}')">💾 下载</button>
+                        </div>
+                    </div>
+                `;
+            });
+
+            videoList.innerHTML = html;
+        }
+
+        // 播放视频
+        function playVideo(url) {
+            window.open(url, '_blank');
+        }
+
+        // 下载视频
+        function downloadVideo(downloadUrl, filename) {
+            const link = document.createElement('a');
+            link.href = downloadUrl;
+            link.download = filename;
+            link.style.display = 'none';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        // 事件监听器
+        connectBtn.addEventListener('click', connectWebSocket);
+        disconnectBtn.addEventListener('click', disconnectWebSocket);
+
+        camera0Btn.addEventListener('click', () => updateCameraSelection('/dev/video0'));
+        camera2Btn.addEventListener('click', () => updateCameraSelection('/dev/video2'));
+
+        startRecordingBtn.addEventListener('click', startRecording);
+        stopRecordingBtn.addEventListener('click', stopRecording);
+        refreshBtn.addEventListener('click', refreshVideoList);
+
+        // 页面加载完成
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('篮球录制系统已加载');
+            updateConnectionStatus(false);
+            updateCameraSelection(null);
+            updateRecordingStatus(false);
+        });
+    </script>
+</body>
+</html>

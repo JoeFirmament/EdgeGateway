@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>导航栏测试页面 - 深视边缘视觉平台</title>
+    <link rel="stylesheet" href="/static/css/unified-style.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- 顶部导航 -->
+        <div id="navigation-container"></div>
+
+        <!-- 页面标题 -->
+        <header class="page-header">
+            <h1 class="page-title">Navigation Test</h1>
+            <p class="page-subtitle">测试统一导航栏组件的加载和功能</p>
+        </header>
+
+        <!-- 测试内容 -->
+        <div class="card fade-in">
+            <div class="card-header">
+                <h3 class="card-title">🧭 导航栏测试</h3>
+            </div>
+            <div class="card-content">
+                <p>这是一个测试页面，用于验证统一导航栏组件的功能。</p>
+
+                <div style="margin-top: 20px;">
+                    <h4>测试项目：</h4>
+                    <ul>
+                        <li>✅ 导航栏组件是否正确加载</li>
+                        <li>✅ 当前页面是否正确高亮</li>
+                        <li>✅ 所有导航链接是否可点击</li>
+                        <li>✅ 响应式设计是否正常</li>
+                    </ul>
+                </div>
+
+                <div style="margin-top: 20px;">
+                    <button class="btn btn-primary" onclick="testNavigation()">测试导航功能</button>
+                    <button class="btn btn-secondary" onclick="showNavigationInfo()">显示导航信息</button>
+                </div>
+
+                <div id="testResults" style="margin-top: 20px; padding: 15px; background: rgba(248, 249, 250, 0.8); border-radius: 8px; display: none;">
+                    <h4>测试结果：</h4>
+                    <div id="testOutput"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/js/navigation.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('🧪 导航栏测试页面已加载');
+
+            // 等待导航栏加载完成后进行测试
+            setTimeout(() => {
+                if (window.navigationManager && window.navigationManager.isLoaded()) {
+                    console.log('✅ 导航栏已成功加载');
+                } else {
+                    console.log('❌ 导航栏加载失败');
+                }
+            }, 1000);
+        });
+
+        function testNavigation() {
+            const results = document.getElementById('testResults');
+            const output = document.getElementById('testOutput');
+
+            let testOutput = '';
+
+            // 测试1: 检查导航栏是否存在
+            const nav = document.querySelector('.top-navigation');
+            if (nav) {
+                testOutput += '✅ 导航栏元素存在<br>';
+            } else {
+                testOutput += '❌ 导航栏元素不存在<br>';
+            }
+
+            // 测试2: 检查导航标签数量
+            const navTabs = document.querySelectorAll('.nav-tab');
+            testOutput += `📊 导航标签数量: ${navTabs.length}<br>`;
+
+            // 测试3: 检查激活状态
+            const activeTab = document.querySelector('.nav-tab.active');
+            if (activeTab) {
+                testOutput += `✅ 激活标签: ${activeTab.textContent}<br>`;
+            } else {
+                testOutput += '❌ 没有激活的导航标签<br>';
+            }
+
+            // 测试4: 检查导航管理器
+            if (window.navigationManager) {
+                testOutput += '✅ 导航管理器存在<br>';
+                testOutput += `📍 当前页面: ${window.navigationManager.getCurrentPage()}<br>`;
+                testOutput += `🔄 是否已加载: ${window.navigationManager.isLoaded()}<br>`;
+            } else {
+                testOutput += '❌ 导航管理器不存在<br>';
+            }
+
+            output.innerHTML = testOutput;
+            results.style.display = 'block';
+        }
+
+        function showNavigationInfo() {
+            const results = document.getElementById('testResults');
+            const output = document.getElementById('testOutput');
+
+            let info = '<h5>导航栏详细信息：</h5>';
+
+            const navTabs = document.querySelectorAll('.nav-tab');
+            navTabs.forEach((tab, index) => {
+                const isActive = tab.classList.contains('active');
+                const page = tab.getAttribute('data-page');
+                const href = tab.getAttribute('href');
+
+                info += `<div style="margin: 8px 0; padding: 8px; background: ${isActive ? 'rgba(52, 152, 219, 0.1)' : 'rgba(236, 240, 241, 0.5)'}; border-radius: 4px;">`;
+                info += `<strong>${tab.textContent}</strong><br>`;
+                info += `页面ID: ${page}<br>`;
+                info += `链接: ${href}<br>`;
+                info += `状态: ${isActive ? '激活' : '普通'}`;
+                info += `</div>`;
+            });
+
+            output.innerHTML = info;
+            results.style.display = 'block';
+        }
+    </script>
+</body>
+</html>
